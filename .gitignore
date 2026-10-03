@@ -1,0 +1,21 @@
+# Maven-Build-Ausgaben
+target/
+
+# Eclipse-Projektdateien (werden beim Maven-Import neu erzeugt)
+.settings/
+.project
+.classpath
+bin/
+
+# macOS
+.DS_Store
+
+# Lokale Daten: Quelldokumente (z. B. PDFs), Caches, Vektordateien
+data/
+
+# Geheimnisse – API-Keys gehören nie ins Repository
+.env
+*.key
+
+# Lokale Claude-Code-Einstellungen
+.claude/

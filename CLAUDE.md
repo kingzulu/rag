@@ -1,0 +1,2 @@
+- Vor größeren Architekturänderungen erst einen Plan vorlegen und auf Freigabe warten.
+- Bei unklaren Anforderungen nachfragen statt Annahmen zu treffen.
