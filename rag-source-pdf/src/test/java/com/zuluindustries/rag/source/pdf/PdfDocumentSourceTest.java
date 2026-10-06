@@ -45,6 +45,25 @@ class PdfDocumentSourceTest {
     }
 
     @Test
+    void readsOnlyRequestedPageRange() throws IOException {
+        Path pdf = tempDir.resolve("testregeln.pdf");
+        writePdf(pdf, "Vorwort", "Regel 1 Das Spiel", "Regel 2 Der Platz", "Index");
+
+        List<Document> documents = new PdfDocumentSource(pdf, 2, 3, true).load();
+
+        assertEquals(List.of("testregeln#seite-2", "testregeln#seite-3"),
+                documents.stream().map(Document::id).toList());
+    }
+
+    @Test
+    void rejectsInvalidPageRange() throws IOException {
+        Path pdf = tempDir.resolve("testregeln.pdf");
+        writePdf(pdf, "Regel 1");
+
+        assertThrows(IllegalArgumentException.class, () -> new PdfDocumentSource(pdf, 5, 3, false));
+    }
+
+    @Test
     void rejectsMissingFile() {
         Path missing = tempDir.resolve("gibt-es-nicht.pdf");
 

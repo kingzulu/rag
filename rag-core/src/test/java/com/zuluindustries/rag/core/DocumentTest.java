@@ -20,6 +20,17 @@ class DocumentTest {
     }
 
     @Test
+    void withMetadataCreatesChangedCopy() {
+        Document original = new Document("p41", "Text", Map.of("seite", "41"));
+
+        Document copy = original.withMetadata("seite_gedruckt", "39");
+
+        assertEquals("39", copy.metadata().get("seite_gedruckt"));
+        assertEquals("41", copy.metadata().get("seite"));
+        assertEquals(1, original.metadata().size()); // Original bleibt unverändert
+    }
+
+    @Test
     void rejectsBlankText() {
         assertThrows(IllegalArgumentException.class, () -> new Document("leer", "   "));
     }
