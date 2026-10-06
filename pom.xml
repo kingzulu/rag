@@ -14,6 +14,7 @@
 
     <modules>
         <module>rag-core</module>
+        <module>rag-source-pdf</module>
         <module>rag-app</module>
     </modules>
 
@@ -22,6 +23,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <junit.version>6.1.3</junit.version>
+        <pdfbox.version>3.0.8</pdfbox.version>
         <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.6.0</maven-surefire-plugin.version>
     </properties>
@@ -33,6 +35,16 @@
                 <groupId>com.zuluindustries</groupId>
                 <artifactId>rag-core</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.zuluindustries</groupId>
+                <artifactId>rag-source-pdf</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.pdfbox</groupId>
+                <artifactId>pdfbox</artifactId>
+                <version>${pdfbox.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.junit</groupId>
