@@ -51,7 +51,7 @@ public class SearchEvaluation {
             new TestQuestion("Was ist eine Grundstrafe?", List.of("Grundstrafe")),
             new TestQuestion("Wie droppe ich einen Ball richtig?", List.of("14.3b")),
             new TestQuestion("Mein Ball liegt in einem Kaninchenloch. Bekomme ich Erleichterung?",
-                    List.of("16.1", "Tierloch")),
+                    List.of("16.1a", "16.1b", "Tierloch")),   // nicht "16.1": 16.1c handelt vom Bunker
             new TestQuestion("Mein Ball steckt in seinem eigenen Einschlagloch. Bekomme ich Erleichterung?",
                     List.of("16.3", "Eingebettet")),
             new TestQuestion("Wer gewinnt im Zählspiel?", List.of("3.3a")),

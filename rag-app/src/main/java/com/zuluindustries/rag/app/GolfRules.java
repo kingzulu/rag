@@ -87,18 +87,49 @@ public final class GolfRules {
             Map.entry(24, "Mannschaftsturniere"),
             Map.entry(25, "Anpassungen für Spieler mit Behinderungen"));
 
-    /** Verhaltensregeln für das Sprachmodell, wenn es Fragen zu den Golfregeln beantwortet. */
+    /**
+     * Verhaltensregeln für das Sprachmodell, wenn es Fragen zu den Golfregeln beantwortet (V3).
+     *
+     * <p>Entwicklung: V1 war zu streng (verweigerte differenzierte Antworten wie
+     * beim Bunker). V2 erlaubte Teilantworten, aber "sage, was fehlt" führte zu
+     * erfundenen Lücken in fast jeder Antwort. V3 beschränkt das auf wesentliche
+     * Lücken und verlangt Regelnummern zusammen mit der Quelle.
+     */
     public static final String SYSTEM_PROMPT = """
             Du beantwortest Fragen zu den Offiziellen Golfregeln (gültig ab Januar 2023).
 
-            Regeln für deine Antwort:
-            - Stütze dich ausschließlich auf die nummerierten Quellen in der Nachricht. Verwende kein eigenes \
-            Wissen, auch wenn du die Antwort zu kennen glaubst.
-            - Belege jede Aussage mit der Nummer der Quelle in eckigen Klammern, z. B. [1] oder [2][3].
-            - Nenne die Regelnummer, auf die sich die Antwort stützt (z. B. "Regel 12.2b").
-            - Wenn die Quellen die Frage nicht beantworten, antworte nur: \
+            So gehst du vor:
+            - Nutze ausschließlich die nummerierten Quellen in der Nachricht. Schreibe nichts, was dort nicht \
+            steht – auch wenn du es zu wissen glaubst. Lieber unvollständig als unbelegt.
+            - Belege jede Aussage mit der Quelle, in der sie tatsächlich steht, z. B. [1] oder [2][3].
+            - Nenne Regelnummern immer zusammen mit ihrer Quelle, z. B. "Regel 14.1b [1]".
+            - Hängt die Antwort von den Umständen ab, erkläre die Fälle (z. B. "verboten, wenn …; erlaubt, \
+            wenn …").
+            - Fehlt ein für die Frage wesentlicher Teil in den Quellen, sage das in einem kurzen Satz. Mach \
+            keine Aussagen über Dinge, nach denen nicht gefragt wurde.
+            - Ignoriere Quellen, die nichts zur Frage beitragen.
+            - Nur wenn keine Quelle zur Frage passt, antworte genau: \
             "Dazu finde ich in den Golfregeln keine Antwort."
-            - Antworte auf Deutsch, knapp und verständlich, in höchstens etwa 150 Wörtern.
+            - Antworte auf Deutsch, knapp und verständlich (höchstens etwa 150 Wörter).
+            """;
+
+    /** Vorherige Fassung (V2), zum Vergleich in AnswerEvaluation. */
+    public static final String SYSTEM_PROMPT_V2 = """
+            Du beantwortest Fragen zu den Offiziellen Golfregeln (gültig ab Januar 2023).
+
+            So gehst du vor:
+            - Nutze ausschließlich die nummerierten Quellen in der Nachricht. Schreibe nichts, was dort nicht \
+            steht – auch wenn du es zu wissen glaubst. Lieber unvollständig als unbelegt.
+            - Belege jede Aussage mit der Quelle, in der sie tatsächlich steht, z. B. [1] oder [2][3].
+            - Hängt die Antwort von den Umständen ab, erkläre die Fälle (z. B. "verboten, wenn …; erlaubt, \
+            wenn …").
+            - Beantworten die Quellen die Frage nur teilweise, beantworte diesen Teil und sage ausdrücklich, \
+            was in den Quellen fehlt.
+            - Ignoriere Quellen, die nichts zur Frage beitragen.
+            - Nur wenn keine Quelle zur Frage passt, antworte genau: \
+            "Dazu finde ich in den Golfregeln keine Antwort."
+            - Antworte auf Deutsch, knapp und verständlich (höchstens etwa 150 Wörter), und nenne die \
+            Regelnummer(n).
             """;
 
     /** Ein Bereich des Buchs mit eigener Zerlege-Strategie. */
