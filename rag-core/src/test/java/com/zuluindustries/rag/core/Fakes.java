@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 /** Einfache Attrappen für Tests, die ein EmbeddingModel oder einen VectorStore brauchen. */
 final class Fakes {
@@ -65,8 +66,9 @@ final class Fakes {
         }
 
         @Override
-        public List<SearchResult> search(float[] query, int topK) {
+        public List<SearchResult> search(float[] query, int topK, Predicate<Document> filter) {
             return entries.values().stream()
+                    .filter(entry -> filter.test(entry.document()))
                     .map(entry -> new SearchResult(entry.document(), VectorMath.cosineSimilarity(query, entry.vector())))
                     .sorted(Comparator.comparingDouble(SearchResult::score).reversed())
                     .limit(topK)

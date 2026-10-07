@@ -37,6 +37,19 @@ class InMemoryVectorStoreTest {
     }
 
     @Test
+    void searchesOnlyDocumentsMatchingFilter() {
+        store.add(bunker, new float[] { 1, 0, 0 });
+        store.add(green, new float[] { 0.7f, 0.7f, 0 });
+        store.add(clubs, new float[] { 0, 0, 1 });
+
+        // Ohne Filter wäre "bunker" der beste Treffer – er ist aber ausgeschlossen.
+        List<SearchResult> results = store.search(new float[] { 1, 0, 0 }, 5,
+                document -> !document.id().equals("bunker"));
+
+        assertEquals(List.of("gruen", "schlaeger"), results.stream().map(result -> result.document().id()).toList());
+    }
+
+    @Test
     void replacesEntryWithSameId() {
         store.add(bunker, new float[] { 1, 0, 0 });
         store.add(new Document("bunker", "Neuer Text"), new float[] { 0, 1, 0 });

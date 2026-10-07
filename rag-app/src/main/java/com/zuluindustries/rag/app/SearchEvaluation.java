@@ -2,7 +2,11 @@ package com.zuluindustries.rag.app;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 import com.zuluindustries.rag.core.EmbeddingModel;
 import com.zuluindustries.rag.core.Retriever;
@@ -95,6 +99,36 @@ public class SearchEvaluation {
         printSummary("Mit Anweisung   ", ranksInstruct);
 
         printBestScores(instruct);
+        printClosestDefinitions(instruct);
+    }
+
+    /**
+     * Gibt für jede Frage die drei Definitionen aus, die ihr am ähnlichsten sind –
+     * als Grundlage für eine Zusatzsuche, die passende Definitionen zu den Quellen
+     * ergänzt. Lange Definitionen sind auf mehrere Chunks verteilt; jeder Begriff
+     * erscheint nur einmal (mit seinem besten Teil).
+     */
+    private static void printClosestDefinitions(Retriever retriever) {
+        System.out.println();
+        System.out.println("Ähnlichste Definitionen je Frage (mit Anweisung)");
+        List<String> questions = new ArrayList<>(QUESTIONS.stream().map(TestQuestion::question).toList());
+        questions.addAll(OFF_TOPIC_QUESTIONS);
+        for (String question : questions) {
+            List<SearchResult> definitions = retriever.search(retriever.embed(question), 10, GolfRules::isDefinition);
+            System.out.println();
+            System.out.println(question);
+            definitions.stream()
+                    .filter(distinctBy(result -> result.document().metadata().get(ChunkAssembler.NUMBER_KEY)))
+                    .limit(3)
+                    .forEach(result -> System.out.printf("   %.3f  %s%n", result.score(),
+                            result.document().metadata().get(ChunkAssembler.NUMBER_KEY)));
+        }
+    }
+
+    /** Filter, der nur das erste Element mit einem bestimmten Schlüssel durchlässt. */
+    private static <T> Predicate<T> distinctBy(Function<T, String> key) {
+        Set<String> seen = new HashSet<>();
+        return element -> seen.add(key.apply(element));
     }
 
     /** Ein Ähnlichkeitswert mit der zugehörigen Frage. */

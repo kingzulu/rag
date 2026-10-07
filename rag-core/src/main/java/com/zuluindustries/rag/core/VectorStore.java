@@ -3,6 +3,7 @@ package com.zuluindustries.rag.core;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 /**
  * Speichert Dokumente zusammen mit ihren Vektoren und findet zu einem
@@ -28,7 +29,15 @@ public interface VectorStore {
     int retainAll(Collection<String> ids);
 
     /** Die {@code topK} ähnlichsten Dokumente, das ähnlichste zuerst. */
-    List<SearchResult> search(float[] query, int topK);
+    default List<SearchResult> search(float[] query, int topK) {
+        return search(query, topK, document -> true);
+    }
+
+    /**
+     * Die {@code topK} ähnlichsten Dokumente unter denen, die den Filter erfüllen,
+     * das ähnlichste zuerst – z. B. nur Definitionen.
+     */
+    List<SearchResult> search(float[] query, int topK, Predicate<Document> filter);
 
     int size();
 }

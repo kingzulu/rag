@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -81,8 +82,9 @@ public class InMemoryVectorStore implements VectorStore {
     }
 
     @Override
-    public List<SearchResult> search(float[] query, int topK) {
+    public List<SearchResult> search(float[] query, int topK, Predicate<Document> filter) {
         return entries.values().stream()
+                .filter(entry -> filter.test(entry.document()))
                 .map(entry -> new SearchResult(entry.document(), VectorMath.cosineSimilarity(query, entry.vector())))
                 .sorted(Comparator.comparingDouble(SearchResult::score).reversed())
                 .limit(topK)
