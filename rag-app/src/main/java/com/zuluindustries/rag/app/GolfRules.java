@@ -100,13 +100,23 @@ public final class GolfRules {
     public static final String NO_ANSWER_TEXT = "Dazu finde ich in den Golfregeln keine Antwort.";
 
     /**
-     * Verhaltensregeln für das Sprachmodell, wenn es Fragen zu den Golfregeln beantwortet (V3).
+     * Verhaltensregeln für das Sprachmodell, wenn es Fragen zu den Golfregeln beantwortet (V5).
      *
      * <p>Entwicklung: V1 war zu streng (verweigerte differenzierte Antworten wie
      * beim Bunker). V2 erlaubte Teilantworten, aber "sage, was fehlt" führte zu
      * erfundenen Lücken in fast jeder Antwort. V3 beschränkt das auf wesentliche
-     * Lücken und verlangt Regelnummern zusammen mit der Quelle. Frühere Fassungen
-     * stehen in der Git-Historie.
+     * Lücken und verlangt Regelnummern zusammen mit der Quelle. V4 sollte
+     * mehrdeutige Fragen klären ("Abschlag"), stellte aber fast jeder Antwort einen
+     * Deutungssatz voran, verschlechterte mehrere Antworten und öffnete eine
+     * Hintertür für eigenes Wissen – verworfen. V5 = V3 plus nur das Verbot, den
+     * Standardsatz zusätzlich an eine Antwort zu hängen. Frühere Fassungen stehen
+     * in der Git-Historie.
+     *
+     * <p>Grenzen (Messung 7.10.2026): V5 verhindert den angehängten Standardsatz
+     * nicht zuverlässig – das Modell variiert ihn ("Dazu findest du …"). Die
+     * Schwankung zwischen zwei Läufen derselben Fassung war so groß wie der
+     * Unterschied zwischen V3 und V5; kleine Prompt-Änderungen lassen sich mit
+     * einem einzelnen Lauf nicht sicher bewerten.
      */
     public static final String SYSTEM_PROMPT = """
             Du beantwortest Fragen zu den Offiziellen Golfregeln (gültig ab Januar 2023).
@@ -121,7 +131,8 @@ public final class GolfRules {
             - Fehlt ein für die Frage wesentlicher Teil in den Quellen, sage das in einem kurzen Satz. Mach \
             keine Aussagen über Dinge, nach denen nicht gefragt wurde.
             - Ignoriere Quellen, die nichts zur Frage beitragen.
-            - Nur wenn keine Quelle zur Frage passt, antworte genau: "%s"
+            - Nur wenn keine Quelle zur Frage passt, antworte genau: "%s" \
+            Verwende diesen Satz nie zusätzlich zu einer Antwort.
             - Antworte auf Deutsch, knapp und verständlich (höchstens etwa 150 Wörter).
             """.formatted(NO_ANSWER_TEXT);
 

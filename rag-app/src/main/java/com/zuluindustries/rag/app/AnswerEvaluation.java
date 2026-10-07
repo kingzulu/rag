@@ -13,9 +13,9 @@ import com.zuluindustries.rag.core.chunk.SiblingExpander;
 import com.zuluindustries.rag.store.memory.InMemoryVectorStore;
 
 /**
- * Beantwortet eine feste Liste von Testfragen mit zwei Varianten und gibt die
- * Antworten untereinander aus – zum Vergleichen nach jeder Änderung an Prompt
- * oder Suche. Bewertet wird von Hand.
+ * Beantwortet eine feste Liste von Testfragen – mit einer oder mehreren Varianten
+ * – und gibt die Antworten untereinander aus, zum Vergleichen nach jeder
+ * Änderung an Prompt oder Suche. Bewertet wird von Hand.
  *
  * <p>Temperatur 0, damit Unterschiede von der Variante kommen und nicht vom Zufall.
  * Kosten: etwa 20 Antworten zu je rund 3.000–5.000 Tokens (Fragen unter der
@@ -48,14 +48,10 @@ public class AnswerEvaluation {
         SiblingExpander siblings = new SiblingExpander(store.documents(), GolfRules.MAX_CONTEXT_CHUNKS,
                 GolfRules.MAX_CONTEXT_CHARS);
 
-        AnswerGenerator.Settings withSiblings = AnswerGenerator.Settings.of(GolfRules.SYSTEM_PROMPT, TOP_K)
-                .withExpander(siblings);
+        // Für einen Vergleich eine zweite Variante ergänzen, die sich in genau einer Sache unterscheidet.
         List<Variant> variants = List.of(
-                new Variant("Geschwister, ohne Schwelle",
-                        new AnswerGenerator(retriever, chatModel, withSiblings)),
-                new Variant("Geschwister + Schwelle " + Scaleway.MIN_ANSWER_SCORE + " (wie AskApp)",
-                        new AnswerGenerator(retriever, chatModel,
-                                withSiblings.withMinScore(Scaleway.MIN_ANSWER_SCORE, GolfRules.NO_ANSWER_TEXT))));
+                new Variant("aktuell (wie AskApp)", new AnswerGenerator(retriever, chatModel,
+                        askAppSettings(GolfRules.SYSTEM_PROMPT, siblings))));
 
         for (int q = 0; q < QUESTIONS.size(); q++) {
             String question = QUESTIONS.get(q);
@@ -73,6 +69,13 @@ public class AnswerEvaluation {
                 printSources(answer.sources());
             }
         }
+    }
+
+    /** Dieselben Einstellungen wie in AskApp (Geschwister + Schwelle), nur mit wählbarer Anweisung. */
+    private static AnswerGenerator.Settings askAppSettings(String systemPrompt, SiblingExpander siblings) {
+        return AnswerGenerator.Settings.of(systemPrompt, TOP_K)
+                .withExpander(siblings)
+                .withMinScore(Scaleway.MIN_ANSWER_SCORE, GolfRules.NO_ANSWER_TEXT);
     }
 
     /** Quellen mit Ähnlichkeit; "  erg." = durch Geschwister-Abschnitte ergänzt. */
