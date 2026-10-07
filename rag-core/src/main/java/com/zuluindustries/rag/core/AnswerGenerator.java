@@ -8,13 +8,19 @@ import com.zuluindustries.rag.core.chunk.ChunkAssembler;
  * Das "G" in RAG: beantwortet eine Frage, indem es passende Quellen sucht und
  * ein Sprachmodell bittet, die Antwort <b>nur</b> aus diesen Quellen zu formulieren.
  *
- * <p>Ablauf: Frage → {@link Retriever} → Schwelle prüfen → {@link ContextExpander}
- * → nummerierte Quellen + Frage → {@link ChatModel} → Antwort.
- *
- * <p>Ist schon der beste Suchtreffer der Frage nicht ähnlich genug (unter
- * {@link Settings#minScore()}), passt nichts im Dokument zur Frage. Dann wird das
- * Sprachmodell gar nicht erst gefragt – das spart Kosten und schließt erfundene
- * Antworten auf themenfremde Fragen aus.
+ * <p>Ablauf:
+ * <ol>
+ * <li>Mit der Originalfrage suchen und die Schwelle prüfen. Ist schon der beste
+ * Treffer nicht ähnlich genug (unter {@link Settings#minScore()}), passt nichts im
+ * Dokument zur Frage: Das Sprachmodell wird gar nicht erst gefragt – das spart
+ * Kosten und schließt erfundene Antworten auf themenfremde Fragen aus.</li>
+ * <li>Optional die Frage für die Suche umformulieren ({@link QueryRewriter}, z. B.
+ * Fachbegriffe ergänzen) und mit dem Suchtext erneut suchen. Die Schwelle wird
+ * bewusst vorher mit der Originalfrage geprüft: Ergänzte Fachbegriffe würden auch
+ * themenfremde Fragen ähnlicher erscheinen lassen.</li>
+ * <li>Treffer ergänzen ({@link ContextExpander}, z. B. Geschwister-Abschnitte).</li>
+ * <li>Nummerierte Quellen + <b>Original</b>frage → {@link ChatModel} → Antwort.</li>
+ * </ol>
  *
  * <p>Wie sich das Modell verhalten soll (Sprache, Quellenangaben, was bei fehlender
  * Antwort zu tun ist), steht in der Systemanweisung, die von außen kommt – so
@@ -26,8 +32,9 @@ public class AnswerGenerator {
      * Die Antwort und die Quellen (Quelle [1] = erstes Element).
      *
      * @param modelAsked {@code false}, wenn die Antwort wegen der Schwelle ohne Sprachmodell entstand
+     * @param searchText der Text, mit dem die Quellen gesucht wurden (die Frage, ggf. umformuliert)
      */
-    public record Answer(String text, List<SearchResult> sources, boolean modelAsked) {
+    public record Answer(String text, List<SearchResult> sources, boolean modelAsked, String searchText) {
     }
 
     /**
@@ -39,22 +46,27 @@ public class AnswerGenerator {
      * @param expander     ergänzt die Treffer um weitere Quellen (z. B. Geschwister-Abschnitte)
      * @param minScore     Mindest-Ähnlichkeit des besten Treffers, damit das Modell gefragt wird
      * @param noAnswerText Antwort, wenn der beste Treffer unter {@code minScore} liegt
+     * @param rewriter     formt die Frage für die Suche um (z. B. Fachbegriffe ergänzen)
      */
     public record Settings(String systemPrompt, int topK, ContextExpander expander, double minScore,
-            String noAnswerText) {
+            String noAnswerText, QueryRewriter rewriter) {
 
-        /** Ohne Ergänzung der Treffer und ohne Schwelle. */
+        /** Ohne Ergänzung der Treffer, ohne Schwelle und ohne Umformulierung. */
         public static Settings of(String systemPrompt, int topK) {
             return new Settings(systemPrompt, topK, ContextExpander.NONE, Double.NEGATIVE_INFINITY,
-                    "Keine passenden Quellen gefunden.");
+                    "Keine passenden Quellen gefunden.", QueryRewriter.NONE);
         }
 
         public Settings withExpander(ContextExpander newExpander) {
-            return new Settings(systemPrompt, topK, newExpander, minScore, noAnswerText);
+            return new Settings(systemPrompt, topK, newExpander, minScore, noAnswerText, rewriter);
         }
 
         public Settings withMinScore(double newMinScore, String newNoAnswerText) {
-            return new Settings(systemPrompt, topK, expander, newMinScore, newNoAnswerText);
+            return new Settings(systemPrompt, topK, expander, newMinScore, newNoAnswerText, rewriter);
+        }
+
+        public Settings withRewriter(QueryRewriter newRewriter) {
+            return new Settings(systemPrompt, topK, expander, minScore, noAnswerText, newRewriter);
         }
     }
 
@@ -80,16 +92,24 @@ public class AnswerGenerator {
     }
 
     public Answer answer(String question) {
+        // 1. Mit der Originalfrage suchen und die Schwelle prüfen
         List<SearchResult> hits = retriever.search(question, settings.topK());
         if (hits.isEmpty() || hits.getFirst().score() < settings.minScore()) {
-            return new Answer(settings.noAnswerText(), hits, false);
+            return new Answer(settings.noAnswerText(), hits, false, question);
         }
 
+        // 2. Optional umformulieren und mit dem Suchtext erneut suchen
+        String searchText = settings.rewriter().rewrite(question);
+        if (!searchText.equals(question)) {
+            hits = retriever.search(searchText, settings.topK());
+        }
+
+        // 3. Treffer ergänzen, 4. Originalfrage beantworten lassen
         List<SearchResult> sources = settings.expander().expand(hits);
         String text = chatModel.chat(List.of(
                 ChatMessage.system(settings.systemPrompt()),
                 ChatMessage.user(buildUserMessage(question, sources))));
-        return new Answer(text, sources, true);
+        return new Answer(text, sources, true, searchText);
     }
 
     /**

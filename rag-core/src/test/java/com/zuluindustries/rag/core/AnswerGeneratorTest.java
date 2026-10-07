@@ -96,6 +96,45 @@ class AnswerGeneratorTest {
     }
 
     @Test
+    void searchesWithRewrittenTextButAnswersOriginalQuestion() {
+        Fakes.WordCountEmbeddingModel embeddings = new Fakes.WordCountEmbeddingModel();
+        Fakes.MapVectorStore store = new Fakes.MapVectorStore();
+        new Indexer(embeddings, store).index(List.of(
+                new Document("regel-gruen", "Regeln für das Grün"),
+                new Document("regel-ball", "Ball im Spiel")));
+        RecordingChatModel chat = new RecordingChatModel();
+        QueryRewriter addGreen = question -> question + " (Grün)";
+        AnswerGenerator generator = new AnswerGenerator(new Retriever(embeddings, store, ""), chat,
+                AnswerGenerator.Settings.of("System", 1).withRewriter(addGreen));
+
+        AnswerGenerator.Answer answer = generator.answer("Was gilt hier?");
+
+        assertEquals("Was gilt hier? (Grün)", answer.searchText());
+        assertEquals("regel-gruen", answer.sources().getFirst().document().id());   // dank "(Grün)" gefunden
+        assertTrue(chat.received.get(1).content().endsWith("Frage: Was gilt hier?"));   // Originalfrage
+    }
+
+    @Test
+    void checksThresholdWithOriginalQuestionBeforeRewriting() {
+        Fakes.WordCountEmbeddingModel embeddings = new Fakes.WordCountEmbeddingModel();
+        Fakes.MapVectorStore store = new Fakes.MapVectorStore();
+        new Indexer(embeddings, store).index(List.of(new Document("regel-bunker", "Bunker")));
+        List<String> rewritten = new ArrayList<>();
+        QueryRewriter recordingRewriter = question -> {
+            rewritten.add(question);
+            return question + " (Bunker)";   // würde die Frage künstlich passend machen
+        };
+        AnswerGenerator generator = new AnswerGenerator(new Retriever(embeddings, store, ""), new RecordingChatModel(),
+                AnswerGenerator.Settings.of("System", 1).withMinScore(0.5, "Keine Antwort.")
+                        .withRewriter(recordingRewriter));
+
+        AnswerGenerator.Answer answer = generator.answer("Wie koche ich Spaghetti?");
+
+        assertEquals("Keine Antwort.", answer.text());
+        assertTrue(rewritten.isEmpty(), "Unter der Schwelle wird gar nicht erst umformuliert");
+    }
+
+    @Test
     void chainsExpandersWithAndThen() {
         Document first = new Document("eins", "Eins");
         Document second = new Document("zwei", "Zwei");

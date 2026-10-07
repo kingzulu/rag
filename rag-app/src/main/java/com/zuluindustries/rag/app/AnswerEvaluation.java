@@ -9,6 +9,7 @@ import com.zuluindustries.rag.core.ContextExpander;
 import com.zuluindustries.rag.core.Document;
 import com.zuluindustries.rag.core.Retriever;
 import com.zuluindustries.rag.core.SearchResult;
+import com.zuluindustries.rag.core.TermQueryRewriter;
 import com.zuluindustries.rag.core.chunk.ChunkAssembler;
 import com.zuluindustries.rag.core.chunk.SiblingExpander;
 import com.zuluindustries.rag.store.memory.InMemoryVectorStore;
@@ -49,10 +50,15 @@ public class AnswerEvaluation {
         SiblingExpander siblings = new SiblingExpander(store.documents(), GolfRules.MAX_CONTEXT_CHUNKS,
                 GolfRules.MAX_CONTEXT_CHARS);
 
-        // Für einen Vergleich eine zweite Variante ergänzen, die sich in genau einer Sache unterscheidet.
+        TermQueryRewriter termRewriter = new TermQueryRewriter(chatModel,
+                GolfRules.definitionTerms(store.documents()), GolfRules.MAX_QUERY_TERMS);
+
+        // Die Varianten unterscheiden sich in genau einer Sache.
+        AnswerGenerator.Settings current = askAppSettings(GolfRules.SYSTEM_PROMPT, siblings);
         List<Variant> variants = List.of(
-                new Variant("aktuell (wie AskApp)", new AnswerGenerator(retriever, chatModel,
-                        askAppSettings(GolfRules.SYSTEM_PROMPT, siblings))));
+                new Variant("aktuell (wie AskApp)", new AnswerGenerator(retriever, chatModel, current)),
+                new Variant("+ Begriffe", new AnswerGenerator(retriever, chatModel,
+                        current.withRewriter(termRewriter))));
 
         int failures = 0;
         for (int q = 0; q < QUESTIONS.size(); q++) {
@@ -66,6 +72,9 @@ public class AnswerEvaluation {
                 // Ein Fehler (z. B. Zeitüberschreitung beim Anbieter) soll nicht die ganze Auswertung abbrechen.
                 try {
                     AnswerGenerator.Answer answer = variant.generator().answer(question);
+                    if (!answer.searchText().equals(question)) {
+                        System.out.println("(gesucht mit: " + answer.searchText() + ")");
+                    }
                     System.out.println(answer.text());
                     if (!answer.modelAsked()) {
                         System.out.println("(Sprachmodell nicht gefragt – bester Treffer unter der Schwelle)");
