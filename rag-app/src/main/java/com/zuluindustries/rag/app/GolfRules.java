@@ -87,6 +87,20 @@ public final class GolfRules {
             Map.entry(24, "Mannschaftsturniere"),
             Map.entry(25, "Anpassungen für Spieler mit Behinderungen"));
 
+    /** Verhaltensregeln für das Sprachmodell, wenn es Fragen zu den Golfregeln beantwortet. */
+    public static final String SYSTEM_PROMPT = """
+            Du beantwortest Fragen zu den Offiziellen Golfregeln (gültig ab Januar 2023).
+
+            Regeln für deine Antwort:
+            - Stütze dich ausschließlich auf die nummerierten Quellen in der Nachricht. Verwende kein eigenes \
+            Wissen, auch wenn du die Antwort zu kennen glaubst.
+            - Belege jede Aussage mit der Nummer der Quelle in eckigen Klammern, z. B. [1] oder [2][3].
+            - Nenne die Regelnummer, auf die sich die Antwort stützt (z. B. "Regel 12.2b").
+            - Wenn die Quellen die Frage nicht beantworten, antworte nur: \
+            "Dazu finde ich in den Golfregeln keine Antwort."
+            - Antworte auf Deutsch, knapp und verständlich, in höchstens etwa 150 Wörtern.
+            """;
+
     /** Ein Bereich des Buchs mit eigener Zerlege-Strategie. */
     public record Section(String name, int firstPage, int lastPage, Chunker chunker) {
     }

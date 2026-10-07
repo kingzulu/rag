@@ -25,7 +25,7 @@
         </dependency>
         <dependency>
             <groupId>com.zuluindustries</groupId>
-            <artifactId>rag-embedding-openai-compatible</artifactId>
+            <artifactId>rag-provider-openai-compatible</artifactId>
         </dependency>
         <dependency>
             <groupId>com.zuluindustries</groupId>

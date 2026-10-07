@@ -15,7 +15,7 @@
     <modules>
         <module>rag-core</module>
         <module>rag-source-pdf</module>
-        <module>rag-embedding-openai-compatible</module>
+        <module>rag-provider-openai-compatible</module>
         <module>rag-store-memory</module>
         <module>rag-app</module>
     </modules>
@@ -46,7 +46,7 @@
             </dependency>
             <dependency>
                 <groupId>com.zuluindustries</groupId>
-                <artifactId>rag-embedding-openai-compatible</artifactId>
+                <artifactId>rag-provider-openai-compatible</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

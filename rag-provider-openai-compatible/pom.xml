@@ -10,9 +10,9 @@
         <version>0.1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>rag-embedding-openai-compatible</artifactId>
-    <name>RAG Embedding: OpenAI-kompatibel</name>
-    <description>EmbeddingModel für alle Anbieter mit OpenAI-kompatibler API (z. B. Scaleway, OpenAI, Mistral)</description>
+    <artifactId>rag-provider-openai-compatible</artifactId>
+    <name>RAG Provider: OpenAI-kompatibel</name>
+    <description>EmbeddingModel und ChatModel für alle Anbieter mit OpenAI-kompatibler API (z. B. Scaleway, OpenAI, Mistral)</description>
 
     <dependencies>
         <dependency>

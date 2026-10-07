@@ -1,4 +1,4 @@
-package com.zuluindustries.rag.embedding.openai;
+package com.zuluindustries.rag.provider.openai;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
