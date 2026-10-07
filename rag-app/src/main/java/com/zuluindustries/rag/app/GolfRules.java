@@ -31,6 +31,7 @@ import com.zuluindustries.rag.source.pdf.PdfDocumentSource;
 public final class GolfRules {
 
     public static final Path DEFAULT_PDF = Path.of("../data/golfregeln/offizielle_golfregeln_2023.pdf");
+    public static final Path INDEX_FILE = DEFAULT_PDF.resolveSibling("suchindex.jsonl");
 
     public static final int FIRST_PAGE = 20;    // "Wesentliche Änderungen 2023"
     public static final int LAST_PAGE = 268;    // letzte Seite der Definitionen

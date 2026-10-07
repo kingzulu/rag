@@ -9,21 +9,16 @@ import com.zuluindustries.rag.core.Document;
 import com.zuluindustries.rag.core.EmbeddingModel;
 import com.zuluindustries.rag.core.VectorMath;
 import com.zuluindustries.rag.core.chunk.ChunkAssembler;
-import com.zuluindustries.rag.embedding.openai.OpenAiCompatibleEmbeddingModel;
 
 /**
  * Erstes Experiment mit echten Embeddings: Eine Frage und eine kleine Auswahl
  * von Chunks werden in Vektoren umgewandelt; dann werden die Chunks nach ihrer
  * Ähnlichkeit zur Frage sortiert.
  *
- * <p>Braucht die Umgebungsvariable {@value #API_KEY_VARIABLE} (Scaleway Secret Key).
+ * <p>Braucht die Umgebungsvariable SCW_SECRET_KEY (Scaleway Secret Key).
  * Optionales Programm-Argument: eine eigene Frage.
  */
 public class EmbeddingDemo {
-
-    private static final String BASE_URL = "https://api.scaleway.ai/v1";
-    private static final String MODEL = "bge-multilingual-gemma2";
-    private static final String API_KEY_VARIABLE = "SCW_SECRET_KEY";
 
     private static final String DEFAULT_QUESTION = "Darf ich im Bunker vor dem Schlag den Sand berühren?";
 
@@ -46,7 +41,7 @@ public class EmbeddingDemo {
                 .map(number -> firstChunkWithNumber(chunks, number))
                 .toList();
 
-        EmbeddingModel model = OpenAiCompatibleEmbeddingModel.fromEnvironment(BASE_URL, API_KEY_VARIABLE, MODEL);
+        EmbeddingModel model = Scaleway.embeddingModel();
 
         // Frage und Chunks in EINER Anfrage: die Frage an Position 0, danach die Chunks.
         List<String> texts = new ArrayList<>();
@@ -56,7 +51,7 @@ public class EmbeddingDemo {
         float[] questionVector = vectors.getFirst();
 
         System.out.println("Frage: " + question);
-        System.out.println("Modell: " + MODEL + ", Vektorlänge: " + questionVector.length);
+        System.out.println("Modell: " + Scaleway.MODEL + ", Vektorlänge: " + questionVector.length);
         System.out.println();
 
         record Scored(double similarity, Document chunk) {
