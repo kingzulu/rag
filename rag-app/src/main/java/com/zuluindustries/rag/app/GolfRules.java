@@ -58,6 +58,9 @@ public final class GolfRules {
      */
     public static final String DEFINITIONS_SECTION = "Definitionen";
 
+    /** Höchstens so viele Fachbegriffe ergänzt die Frage-Umformulierung (Query Expansion). */
+    public static final int MAX_QUERY_TERMS = 4;
+
     private static final boolean SORT_BY_POSITION = true;
     private static final int PRINTED_PAGE_OFFSET = -2;
     private static final String[] HEADER_PATTERNS = {
@@ -205,6 +208,16 @@ public final class GolfRules {
     /** Ist dieser Chunk eine Definition (aus dem Abschnitt "Definitionen")? */
     public static boolean isDefinition(Document chunk) {
         return DEFINITIONS_SECTION.equals(chunk.metadata().get(ChunkAssembler.SECTION_KEY));
+    }
+
+    /** Die definierten Begriffe (je einmal, in Buch-Reihenfolge) – Vokabular für die Frage-Ergänzung. */
+    public static List<String> definitionTerms(List<Document> allChunks) {
+        return allChunks.stream()
+                .filter(GolfRules::isDefinition)
+                .map(chunk -> chunk.metadata().get(ChunkAssembler.NUMBER_KEY))
+                .filter(term -> term != null)
+                .distinct()
+                .toList();
     }
 
     private static boolean isInSection(Document page, Section section) {

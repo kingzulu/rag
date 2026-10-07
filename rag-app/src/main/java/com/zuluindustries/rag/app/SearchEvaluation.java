@@ -3,7 +3,9 @@ package com.zuluindustries.rag.app;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -11,13 +13,15 @@ import java.util.function.Predicate;
 import com.zuluindustries.rag.core.EmbeddingModel;
 import com.zuluindustries.rag.core.Retriever;
 import com.zuluindustries.rag.core.SearchResult;
-import com.zuluindustries.rag.core.VectorStore;
+import com.zuluindustries.rag.core.TermQueryRewriter;
 import com.zuluindustries.rag.core.chunk.ChunkAssembler;
+import com.zuluindustries.rag.store.memory.InMemoryVectorStore;
 
 /**
  * Misst die Suchqualität mit Testfragen, deren richtige Antwort (Regelnummer
- * oder Definitionsbegriff) bekannt ist – und vergleicht dabei zwei Varianten:
- * Fragen ohne Präfix und Fragen mit der Anweisung, die das Modell erwartet.
+ * oder Definitionsbegriff) bekannt ist – und vergleicht dabei drei Varianten:
+ * Fragen ohne Präfix, Fragen mit der Anweisung, die das Modell erwartet, und
+ * zusätzlich um Fachbegriffe ergänzte Fragen (Query Expansion).
  *
  * <p>Kennzahlen:
  * <ul>
@@ -79,24 +83,39 @@ public class SearchEvaluation {
 
     public static void main(String[] args) throws IOException {
         EmbeddingModel model = Scaleway.embeddingModel();
-        VectorStore store = SearchIndex.loadExisting();
+        InMemoryVectorStore store = SearchIndex.loadExisting();
 
         Retriever plain = new Retriever(model, store, "");
         Retriever instruct = new Retriever(model, store, Scaleway.QUERY_INSTRUCTION);
-        List<Integer> ranksPlain = ranks(plain);
-        List<Integer> ranksInstruct = ranks(instruct);
+        TermQueryRewriter rewriter = new TermQueryRewriter(Scaleway.chatModel(0.0),
+                GolfRules.definitionTerms(store.documents()), GolfRules.MAX_QUERY_TERMS);
+
+        // Jede Frage nur einmal umformulieren lassen (kostet einen Modellaufruf) und das Ergebnis merken.
+        Map<String, String> rewritten = new LinkedHashMap<>();
+        QUESTIONS.forEach(test -> rewritten.put(test.question(), rewriter.rewrite(test.question())));
+
+        List<Integer> ranksPlain = ranks(question -> plain.search(question, TOP_K));
+        List<Integer> ranksInstruct = ranks(question -> instruct.search(question, TOP_K));
+        List<Integer> ranksTerms = ranks(question -> instruct.search(rewritten.get(question), TOP_K));
 
         System.out.println("Platz der ersten richtigen Antwort (– = nicht unter den ersten " + TOP_K + ")");
         System.out.println();
-        System.out.println(" #  ohne  mit   Frage");
-        System.out.println("    Präfix Anw.");
+        System.out.println(" #  ohne  mit   mit    Frage");
+        System.out.println("    Präfix Anw. Begr.");
         for (int i = 0; i < QUESTIONS.size(); i++) {
-            System.out.printf("%2d   %-4s %-4s  %s%n", i + 1, format(ranksPlain.get(i)), format(ranksInstruct.get(i)),
-                    QUESTIONS.get(i).question());
+            System.out.printf("%2d   %-4s %-4s %-5s  %s%n", i + 1, format(ranksPlain.get(i)),
+                    format(ranksInstruct.get(i)), format(ranksTerms.get(i)), QUESTIONS.get(i).question());
         }
         System.out.println();
         printSummary("Ohne Präfix     ", ranksPlain);
         printSummary("Mit Anweisung   ", ranksInstruct);
+        printSummary("Mit Begriffen   ", ranksTerms);
+
+        System.out.println();
+        System.out.println("Ergänzte Begriffe je Frage:");
+        rewritten.forEach((question, searchText) -> System.out.println("  " + (searchText.equals(question)
+                ? "(keine)  " + question
+                : searchText)));
 
         printBestScores(instruct);
         printClosestDefinitions(instruct);
@@ -177,11 +196,15 @@ public class SearchEvaluation {
                 .toList();
     }
 
-    /** Für jede Testfrage: Platz der ersten richtigen Antwort (1 = ganz oben), 0 = nicht gefunden. */
-    private static List<Integer> ranks(Retriever retriever) {
+    /**
+     * Für jede Testfrage: Platz der ersten richtigen Antwort (1 = ganz oben), 0 = nicht gefunden.
+     *
+     * @param search wie zu einer Frage gesucht wird (z. B. mit oder ohne ergänzte Begriffe)
+     */
+    private static List<Integer> ranks(Function<String, List<SearchResult>> search) {
         List<Integer> ranks = new ArrayList<>();
         for (TestQuestion test : QUESTIONS) {
-            List<SearchResult> results = retriever.search(test.question(), TOP_K);
+            List<SearchResult> results = search.apply(test.question());
             int rank = 0;
             for (int i = 0; i < results.size() && rank == 0; i++) {
                 String number = results.get(i).document().metadata().get(ChunkAssembler.NUMBER_KEY);
