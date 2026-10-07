@@ -94,6 +94,11 @@ public class InMemoryVectorStore implements VectorStore {
         return entries.size();
     }
 
+    /** Alle gespeicherten Dokumente in der Reihenfolge, in der sie hinzugefügt wurden. */
+    public List<Document> documents() {
+        return entries.values().stream().map(Entry::document).toList();
+    }
+
     /** Länge der gespeicherten Vektoren, 0 wenn der Speicher leer ist. */
     public int dimensions() {
         return entries.isEmpty() ? 0 : entries.values().iterator().next().vector().length;

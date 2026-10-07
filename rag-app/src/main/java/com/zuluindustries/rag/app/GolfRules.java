@@ -37,6 +37,12 @@ public final class GolfRules {
     public static final int LAST_PAGE = 268;    // letzte Seite der Definitionen
     public static final int MAX_CHUNK_CHARS = 2000;
 
+    /** So viele Treffer liefert die Suche für eine Antwort. */
+    public static final int ANSWER_TOP_K = 5;
+    /** Obergrenzen, wenn die Treffer um Geschwister-Abschnitte ergänzt werden. */
+    public static final int MAX_CONTEXT_CHUNKS = 10;
+    public static final int MAX_CONTEXT_CHARS = 12_000;
+
     private static final boolean SORT_BY_POSITION = true;
     private static final int PRINTED_PAGE_OFFSET = -2;
     private static final String[] HEADER_PATTERNS = {

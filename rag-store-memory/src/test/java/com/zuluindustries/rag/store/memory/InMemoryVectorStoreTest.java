@@ -64,6 +64,15 @@ class InMemoryVectorStoreTest {
     }
 
     @Test
+    void returnsDocumentsInInsertionOrder() {
+        store.add(green, new float[] { 0, 1, 0 });
+        store.add(bunker, new float[] { 1, 0, 0 });
+        store.add(clubs, new float[] { 0, 0, 1 });
+
+        assertEquals(List.of(green, bunker, clubs), store.documents());
+    }
+
+    @Test
     void rejectsVectorWithDifferentLength() {
         store.add(bunker, new float[] { 1, 0, 0 });
 

@@ -9,17 +9,20 @@ import com.zuluindustries.rag.core.Document;
 import com.zuluindustries.rag.core.Retriever;
 import com.zuluindustries.rag.core.SearchResult;
 import com.zuluindustries.rag.core.chunk.ChunkAssembler;
+import com.zuluindustries.rag.core.chunk.SiblingExpander;
+import com.zuluindustries.rag.store.memory.InMemoryVectorStore;
 
 /**
- * Beantwortet eine feste Liste von Testfragen mit zwei Varianten (z. B. zwei
- * Fassungen der Systemanweisung) und gibt die Antworten untereinander aus – zum Vergleichen nach jeder
- * Änderung an Prompt oder Suche. Bewertet wird von Hand.
+ * Beantwortet eine feste Liste von Testfragen mit zwei Varianten und gibt die
+ * Antworten untereinander aus – zum Vergleichen nach jeder Änderung an Prompt
+ * oder Suche. Bewertet wird von Hand.
  *
- * <p>Kosten: etwa 16 Antworten zu je rund 3.000 Tokens.
+ * <p>Temperatur 0, damit Unterschiede von der Variante kommen und nicht vom Zufall.
+ * Kosten: etwa 16 Antworten zu je rund 3.000–5.000 Tokens.
  */
 public class AnswerEvaluation {
 
-    private static final int TOP_K = 5;
+    private static final int TOP_K = GolfRules.ANSWER_TOP_K;
 
     private static final List<String> QUESTIONS = List.of(
             "Darf ich im Bunker vor dem Schlag den Sand berühren?",
@@ -36,39 +39,43 @@ public class AnswerEvaluation {
     }
 
     public static void main(String[] args) throws IOException {
-        Retriever retriever = new Retriever(Scaleway.embeddingModel(), SearchIndex.loadExisting(),
-                Scaleway.QUERY_INSTRUCTION);
-        ChatModel chatModel = Scaleway.chatModel();
+        InMemoryVectorStore store = SearchIndex.loadExisting();
+        Retriever retriever = new Retriever(Scaleway.embeddingModel(), store, Scaleway.QUERY_INSTRUCTION);
+        ChatModel chatModel = Scaleway.chatModel(0.0);
+        SiblingExpander siblings = new SiblingExpander(store.documents(), GolfRules.MAX_CONTEXT_CHUNKS,
+                GolfRules.MAX_CONTEXT_CHARS);
+
         List<Variant> variants = List.of(
-                new Variant("Anweisung V2",
-                        new AnswerGenerator(retriever, chatModel, GolfRules.SYSTEM_PROMPT_V2, TOP_K)),
-                new Variant("Anweisung V3 (aktuell)",
-                        new AnswerGenerator(retriever, chatModel, GolfRules.SYSTEM_PROMPT, TOP_K)));
+                new Variant("V3, nur Suchtreffer",
+                        new AnswerGenerator(retriever, chatModel, GolfRules.SYSTEM_PROMPT, TOP_K)),
+                new Variant("V3, mit Geschwister-Abschnitten",
+                        new AnswerGenerator(retriever, chatModel, GolfRules.SYSTEM_PROMPT, TOP_K, siblings)));
 
         for (int q = 0; q < QUESTIONS.size(); q++) {
             String question = QUESTIONS.get(q);
             System.out.println("=".repeat(100));
             System.out.println("Frage " + (q + 1) + ": " + question);
 
-            List<SearchResult> sources = null;
             for (Variant variant : variants) {
                 AnswerGenerator.Answer answer = variant.generator().answer(question);
-                sources = answer.sources();
                 System.out.println();
                 System.out.println("--- " + variant.name() + " ---");
                 System.out.println(answer.text());
+                printSources(answer.sources());
             }
-            printSources(sources);
         }
     }
 
+    /** Quellen mit Ähnlichkeit; "  erg." = durch Geschwister-Abschnitte ergänzt. */
     private static void printSources(List<SearchResult> sources) {
+        int chars = sources.stream().mapToInt(source -> source.document().text().length()).sum();
         System.out.println();
-        System.out.printf("Quellen (bester Wert: %.3f):%n", sources.getFirst().score());
+        System.out.println("Quellen (" + sources.size() + ", " + chars + " Zeichen):");
         for (int i = 0; i < sources.size(); i++) {
             Document chunk = sources.get(i).document();
-            System.out.printf("  [%d] %.3f  %s%n", i + 1, sources.get(i).score(),
-                    chunk.metadata().get(ChunkAssembler.HEADING_KEY));
+            double score = sources.get(i).score();
+            String scoreText = Double.isNaN(score) ? "  erg." : String.format("%.3f", score);
+            System.out.printf("  [%d] %s  %s%n", i + 1, scoreText, chunk.metadata().get(ChunkAssembler.HEADING_KEY));
         }
     }
 }

@@ -38,7 +38,12 @@ public final class Scaleway {
 
     /** Das Chat-Modell; der API-Key kommt aus derselben Umgebungsvariable. */
     public static ChatModel chatModel() {
+        return chatModel(CHAT_TEMPERATURE);
+    }
+
+    /** Das Chat-Modell mit eigener Temperatur – 0 für möglichst wiederholbare Antworten (Evaluation). */
+    public static ChatModel chatModel(double temperature) {
         return OpenAiCompatibleChatModel.fromEnvironment(BASE_URL, API_KEY_VARIABLE, CHAT_MODEL,
-                CHAT_TEMPERATURE, CHAT_MAX_TOKENS);
+                temperature, CHAT_MAX_TOKENS);
     }
 }

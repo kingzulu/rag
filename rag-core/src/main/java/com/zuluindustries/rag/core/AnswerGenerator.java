@@ -8,7 +8,8 @@ import com.zuluindustries.rag.core.chunk.ChunkAssembler;
  * Das "G" in RAG: beantwortet eine Frage, indem es passende Quellen sucht und
  * ein Sprachmodell bittet, die Antwort <b>nur</b> aus diesen Quellen zu formulieren.
  *
- * <p>Ablauf: Frage → {@link Retriever} → nummerierte Quellen + Frage → {@link ChatModel} → Antwort.
+ * <p>Ablauf: Frage → {@link Retriever} → {@link ContextExpander} → nummerierte Quellen + Frage
+ * → {@link ChatModel} → Antwort.
  * Wie sich das Modell verhalten soll (Sprache, Quellenangaben, was bei fehlender
  * Antwort zu tun ist), steht in der Systemanweisung, die von außen kommt – so
  * bleibt die Klasse für jedes Thema nutzbar.
@@ -23,20 +24,32 @@ public class AnswerGenerator {
     private final ChatModel chatModel;
     private final String systemPrompt;
     private final int topK;
+    private final ContextExpander expander;
 
     /**
      * @param systemPrompt Verhaltensregeln für das Modell
-     * @param topK         wie viele Quellen das Modell bekommt
+     * @param topK         wie viele Treffer die Suche liefert
      */
     public AnswerGenerator(Retriever retriever, ChatModel chatModel, String systemPrompt, int topK) {
+        this(retriever, chatModel, systemPrompt, topK, ContextExpander.NONE);
+    }
+
+    /**
+     * @param systemPrompt Verhaltensregeln für das Modell
+     * @param topK         wie viele Treffer die Suche liefert
+     * @param expander     ergänzt die Treffer um weitere Quellen (z. B. Geschwister-Abschnitte)
+     */
+    public AnswerGenerator(Retriever retriever, ChatModel chatModel, String systemPrompt, int topK,
+            ContextExpander expander) {
         this.retriever = retriever;
         this.chatModel = chatModel;
         this.systemPrompt = systemPrompt;
         this.topK = topK;
+        this.expander = expander;
     }
 
     public Answer answer(String question) {
-        List<SearchResult> sources = retriever.search(question, topK);
+        List<SearchResult> sources = expander.expand(retriever.search(question, topK));
         String text = chatModel.chat(List.of(
                 ChatMessage.system(systemPrompt),
                 ChatMessage.user(buildUserMessage(question, sources))));

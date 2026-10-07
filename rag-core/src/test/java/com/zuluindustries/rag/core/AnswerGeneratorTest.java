@@ -57,6 +57,22 @@ class AnswerGeneratorTest {
     }
 
     @Test
+    void passesExpandedSourcesToChatModel() {
+        Fakes.WordCountEmbeddingModel embeddings = new Fakes.WordCountEmbeddingModel();
+        Fakes.MapVectorStore store = new Fakes.MapVectorStore();
+        new Indexer(embeddings, store).index(List.of(new Document("bunker", "Bunker")));
+        Document extra = new Document("ergaenzt", "Ergänzte Quelle");
+        ContextExpander addOne = hits -> List.of(hits.getFirst(), new SearchResult(extra, Double.NaN));
+        RecordingChatModel chat = new RecordingChatModel();
+
+        AnswerGenerator.Answer answer = new AnswerGenerator(new Retriever(embeddings, store, ""), chat,
+                "System", 1, addOne).answer("Bunker?");
+
+        assertEquals(List.of("bunker", "ergaenzt"), answer.sources().stream().map(s -> s.document().id()).toList());
+        assertTrue(chat.received.get(1).content().contains("[2] Ergänzte Quelle"));
+    }
+
+    @Test
     void usesPdfPageWhenPrintedPageIsMissing() {
         Document chunk = new Document("gruen", "Grün", Map.of("seite", "119"));
 
