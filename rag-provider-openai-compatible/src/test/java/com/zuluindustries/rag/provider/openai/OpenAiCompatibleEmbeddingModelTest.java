@@ -148,6 +148,18 @@ class OpenAiCompatibleEmbeddingModelTest {
     }
 
     @Test
+    void givesUpAfterFourAttempts() {
+        plannedStatuses.addAll(List.of(504, 504, 504, 504, 504));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> model(32).embed(List.of("Bunker")));
+
+        assertEquals(4, receivedBodies.size());   // 1 Versuch + 3 Wiederholungen, der 5. wird nicht mehr geschickt
+        assertTrue(error.getMessage().contains("Versuch 4"));
+        assertTrue(error.getMessage().contains("HTTP 504"));
+    }
+
+    @Test
     void failsWithoutRetryOnWrongApiKey() {
         plannedStatuses.add(401);
 

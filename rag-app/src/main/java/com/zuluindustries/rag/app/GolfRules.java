@@ -11,6 +11,7 @@ import com.zuluindustries.rag.core.Chunker;
 import com.zuluindustries.rag.core.Document;
 import com.zuluindustries.rag.core.DocumentSource;
 import com.zuluindustries.rag.core.TextCleaner;
+import com.zuluindustries.rag.core.chunk.ChunkAssembler;
 import com.zuluindustries.rag.core.chunk.HeadingChunker;
 import com.zuluindustries.rag.core.chunk.SizeChunker;
 import com.zuluindustries.rag.core.chunk.TermChunker;
@@ -42,6 +43,20 @@ public final class GolfRules {
     /** Obergrenzen, wenn die Treffer um Geschwister-Abschnitte ergänzt werden. */
     public static final int MAX_CONTEXT_CHUNKS = 10;
     public static final int MAX_CONTEXT_CHARS = 12_000;
+
+    /**
+     * Name des Abschnitts mit den Definitionen; dessen Chunks tragen den Begriff in "nummer".
+     *
+     * <p>Verworfenes Experiment (Runde 4, 7.10.2026): Definitionen von Begriffen
+     * ergänzen, die in den Quellen vorkommen – erkannt per Muster (ganze Wörter,
+     * Beugung), seltene Begriffe zuerst, höchstens 4, zwei Stufen. Ergebnis: Die
+     * Seltenheit wählte überwiegend unpassende Definitionen ("Vierer", "Tee",
+     * "Naturkräfte"); beim Kaninchenloch füllten seltenere Begriffe die 4 Plätze,
+     * bevor "Ungewöhnliche Platzverhältnisse" (7 % der Chunks, weil im Titel von
+     * Regel 16) und "Tierloch" an die Reihe kamen. Seltenheit ist kein Maß für
+     * Relevanz zur Frage. Code in diesem Commit nicht übernommen.
+     */
+    public static final String DEFINITIONS_SECTION = "Definitionen";
 
     private static final boolean SORT_BY_POSITION = true;
     private static final int PRINTED_PAGE_OFFSET = -2;
@@ -147,8 +162,8 @@ public final class GolfRules {
                     new SizeChunker("Wie man das Regelbuch benutzt", MAX_CHUNK_CHARS)),
             new Section("Regeln", 24, 240,
                     new HeadingChunker("Regeln", MAX_CHUNK_CHARS, "Regel", RULE_TITLES, "Zweck der Regel:", 6)),
-            new Section("Definitionen", 241, 268,
-                    new TermChunker("Definitionen", MAX_CHUNK_CHARS, 45, 6)));
+            new Section(DEFINITIONS_SECTION, 241, 268,
+                    new TermChunker(DEFINITIONS_SECTION, MAX_CHUNK_CHARS, 45, 6)));
 
     /** Ergebnis der Verarbeitung: Seiten vor und nach dem Bereinigen sowie die Chunks je Abschnitt. */
     public record Result(List<Document> rawPages, List<Document> cleanPages,
@@ -185,6 +200,11 @@ public final class GolfRules {
             chunksBySection.put(section, section.chunker().chunk(sectionPages));
         }
         return new Result(rawPages, cleanPages, chunksBySection);
+    }
+
+    /** Ist dieser Chunk eine Definition (aus dem Abschnitt "Definitionen")? */
+    public static boolean isDefinition(Document chunk) {
+        return DEFINITIONS_SECTION.equals(chunk.metadata().get(ChunkAssembler.SECTION_KEY));
     }
 
     private static boolean isInSection(Document page, Section section) {

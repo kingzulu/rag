@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.zuluindustries.rag.core.AnswerGenerator;
 import com.zuluindustries.rag.core.ChatModel;
+import com.zuluindustries.rag.core.ContextExpander;
 import com.zuluindustries.rag.core.Document;
 import com.zuluindustries.rag.core.Retriever;
 import com.zuluindustries.rag.core.SearchResult;
@@ -53,32 +54,43 @@ public class AnswerEvaluation {
                 new Variant("aktuell (wie AskApp)", new AnswerGenerator(retriever, chatModel,
                         askAppSettings(GolfRules.SYSTEM_PROMPT, siblings))));
 
+        int failures = 0;
         for (int q = 0; q < QUESTIONS.size(); q++) {
             String question = QUESTIONS.get(q);
             System.out.println("=".repeat(100));
             System.out.println("Frage " + (q + 1) + ": " + question);
 
             for (Variant variant : variants) {
-                AnswerGenerator.Answer answer = variant.generator().answer(question);
                 System.out.println();
                 System.out.println("--- " + variant.name() + " ---");
-                System.out.println(answer.text());
-                if (!answer.modelAsked()) {
-                    System.out.println("(Sprachmodell nicht gefragt – bester Treffer unter der Schwelle)");
+                // Ein Fehler (z. B. Zeitüberschreitung beim Anbieter) soll nicht die ganze Auswertung abbrechen.
+                try {
+                    AnswerGenerator.Answer answer = variant.generator().answer(question);
+                    System.out.println(answer.text());
+                    if (!answer.modelAsked()) {
+                        System.out.println("(Sprachmodell nicht gefragt – bester Treffer unter der Schwelle)");
+                    }
+                    printSources(answer.sources());
+                } catch (RuntimeException e) {
+                    failures++;
+                    System.out.println("FEHLER: " + e.getMessage());
                 }
-                printSources(answer.sources());
             }
+        }
+        if (failures > 0) {
+            System.out.println();
+            System.out.println(failures + " Antwort(en) fehlgeschlagen – siehe FEHLER oben.");
         }
     }
 
-    /** Dieselben Einstellungen wie in AskApp (Geschwister + Schwelle), nur mit wählbarer Anweisung. */
-    private static AnswerGenerator.Settings askAppSettings(String systemPrompt, SiblingExpander siblings) {
+    /** Dieselben Einstellungen wie in AskApp (Schwelle), mit wählbarer Anweisung und Ergänzung. */
+    private static AnswerGenerator.Settings askAppSettings(String systemPrompt, ContextExpander expander) {
         return AnswerGenerator.Settings.of(systemPrompt, TOP_K)
-                .withExpander(siblings)
+                .withExpander(expander)
                 .withMinScore(Scaleway.MIN_ANSWER_SCORE, GolfRules.NO_ANSWER_TEXT);
     }
 
-    /** Quellen mit Ähnlichkeit; "  erg." = durch Geschwister-Abschnitte ergänzt. */
+    /** Quellen mit Ähnlichkeit; "erg." = Geschwister-Abschnitt, "def." = ergänzte Definition. */
     private static void printSources(List<SearchResult> sources) {
         int chars = sources.stream().mapToInt(source -> source.document().text().length()).sum();
         System.out.println();
@@ -86,7 +98,8 @@ public class AnswerEvaluation {
         for (int i = 0; i < sources.size(); i++) {
             Document chunk = sources.get(i).document();
             double score = sources.get(i).score();
-            String scoreText = Double.isNaN(score) ? "  erg." : String.format("%.3f", score);
+            String scoreText = !Double.isNaN(score) ? String.format("%.3f", score)
+                    : GolfRules.isDefinition(chunk) ? "  def." : "  erg.";
             System.out.printf("  [%d] %s  %s%n", i + 1, scoreText, chunk.metadata().get(ChunkAssembler.HEADING_KEY));
         }
     }

@@ -23,7 +23,8 @@ public class OpenAiCompatibleClient {
 
     static final ObjectMapper JSON = new ObjectMapper();
 
-    private static final int MAX_ATTEMPTS = 3;
+    /** Ein Versuch plus drei Wiederholungen mit 2, 4 und 8 Sekunden Pause ("exponentielles Backoff"). */
+    private static final int MAX_ATTEMPTS = 4;
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(120);
     private static final int MAX_ERROR_BODY_LENGTH = 500;
 
@@ -86,7 +87,7 @@ public class OpenAiCompatibleClient {
                 throw new IllegalStateException("Anfrage an " + path + " fehlgeschlagen (Versuch " + attempt
                         + "): HTTP " + status + " – " + abbreviate(response.body()));
             }
-            pause(retryDelay.multipliedBy(1L << (attempt - 1)));   // 2 s, 4 s, …
+            pause(retryDelay.multipliedBy(1L << (attempt - 1)));   // 2 s, 4 s, 8 s
         }
     }
 

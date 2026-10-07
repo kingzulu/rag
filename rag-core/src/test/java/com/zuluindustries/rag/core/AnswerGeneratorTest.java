@@ -96,6 +96,23 @@ class AnswerGeneratorTest {
     }
 
     @Test
+    void chainsExpandersWithAndThen() {
+        Document first = new Document("eins", "Eins");
+        Document second = new Document("zwei", "Zwei");
+        ContextExpander addFirst = hits -> List.of(hits.getFirst(), new SearchResult(first, Double.NaN));
+        ContextExpander addSecond = hits -> {
+            List<SearchResult> result = new ArrayList<>(hits);
+            result.add(new SearchResult(second, Double.NaN));
+            return result;
+        };
+        Document hit = new Document("treffer", "Treffer");
+
+        List<SearchResult> expanded = addFirst.andThen(addSecond).expand(List.of(new SearchResult(hit, 0.5)));
+
+        assertEquals(List.of("treffer", "eins", "zwei"), expanded.stream().map(s -> s.document().id()).toList());
+    }
+
+    @Test
     void usesPdfPageWhenPrintedPageIsMissing() {
         Document chunk = new Document("gruen", "Grün", Map.of("seite", "119"));
 

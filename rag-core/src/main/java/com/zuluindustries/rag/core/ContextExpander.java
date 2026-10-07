@@ -18,4 +18,12 @@ public interface ContextExpander {
      * @return die Quellen für das Sprachmodell (enthält alle Treffer)
      */
     List<SearchResult> expand(List<SearchResult> hits);
+
+    /**
+     * Schaltet einen weiteren Erweiterer dahinter: Er bekommt das Ergebnis dieses
+     * Erweiterers. Beispiel: {@code siblings.andThen(definitions)}.
+     */
+    default ContextExpander andThen(ContextExpander next) {
+        return hits -> next.expand(expand(hits));
+    }
 }
