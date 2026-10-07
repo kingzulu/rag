@@ -28,6 +28,19 @@ public final class Scaleway {
     public static final String QUERY_INSTRUCTION =
             "<instruct>Given a web search query, retrieve relevant passages that answer the query.\n<query>";
 
+    /**
+     * Mindest-Ähnlichkeit des besten Suchtreffers, damit das Chat-Modell gefragt wird.
+     *
+     * <p>Gemessen am 7.10.2026 mit SearchEvaluation (mit QUERY_INSTRUCTION):
+     * Regelfragen 0,363–0,507, eindeutig themenfremde Fragen 0,105–0,215,
+     * Grenzfälle wie "Wie verbessere ich meinen Abschlag?" bis 0,391. 0,28 liegt
+     * in der Lücke zwischen Regelfragen und eindeutig themenfremden Fragen;
+     * Grenzfälle erreichen das Chat-Modell und werden dort per Systemanweisung behandelt.
+     *
+     * <p><b>Hängt vom Embedding-Modell und der Anweisung ab – bei einem Wechsel neu messen!</b>
+     */
+    public static final double MIN_ANSWER_SCORE = 0.28;
+
     private Scaleway() {
     }
 

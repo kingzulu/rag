@@ -94,12 +94,19 @@ public final class GolfRules {
             Map.entry(25, "Anpassungen für Spieler mit Behinderungen"));
 
     /**
+     * Antwort, wenn die Golfregeln nichts zur Frage enthalten – vom Sprachmodell
+     * (laut Systemanweisung) oder direkt, wenn kein Suchtreffer die Schwelle erreicht.
+     */
+    public static final String NO_ANSWER_TEXT = "Dazu finde ich in den Golfregeln keine Antwort.";
+
+    /**
      * Verhaltensregeln für das Sprachmodell, wenn es Fragen zu den Golfregeln beantwortet (V3).
      *
      * <p>Entwicklung: V1 war zu streng (verweigerte differenzierte Antworten wie
      * beim Bunker). V2 erlaubte Teilantworten, aber "sage, was fehlt" führte zu
      * erfundenen Lücken in fast jeder Antwort. V3 beschränkt das auf wesentliche
-     * Lücken und verlangt Regelnummern zusammen mit der Quelle.
+     * Lücken und verlangt Regelnummern zusammen mit der Quelle. Frühere Fassungen
+     * stehen in der Git-Historie.
      */
     public static final String SYSTEM_PROMPT = """
             Du beantwortest Fragen zu den Offiziellen Golfregeln (gültig ab Januar 2023).
@@ -114,29 +121,9 @@ public final class GolfRules {
             - Fehlt ein für die Frage wesentlicher Teil in den Quellen, sage das in einem kurzen Satz. Mach \
             keine Aussagen über Dinge, nach denen nicht gefragt wurde.
             - Ignoriere Quellen, die nichts zur Frage beitragen.
-            - Nur wenn keine Quelle zur Frage passt, antworte genau: \
-            "Dazu finde ich in den Golfregeln keine Antwort."
+            - Nur wenn keine Quelle zur Frage passt, antworte genau: "%s"
             - Antworte auf Deutsch, knapp und verständlich (höchstens etwa 150 Wörter).
-            """;
-
-    /** Vorherige Fassung (V2), zum Vergleich in AnswerEvaluation. */
-    public static final String SYSTEM_PROMPT_V2 = """
-            Du beantwortest Fragen zu den Offiziellen Golfregeln (gültig ab Januar 2023).
-
-            So gehst du vor:
-            - Nutze ausschließlich die nummerierten Quellen in der Nachricht. Schreibe nichts, was dort nicht \
-            steht – auch wenn du es zu wissen glaubst. Lieber unvollständig als unbelegt.
-            - Belege jede Aussage mit der Quelle, in der sie tatsächlich steht, z. B. [1] oder [2][3].
-            - Hängt die Antwort von den Umständen ab, erkläre die Fälle (z. B. "verboten, wenn …; erlaubt, \
-            wenn …").
-            - Beantworten die Quellen die Frage nur teilweise, beantworte diesen Teil und sage ausdrücklich, \
-            was in den Quellen fehlt.
-            - Ignoriere Quellen, die nichts zur Frage beitragen.
-            - Nur wenn keine Quelle zur Frage passt, antworte genau: \
-            "Dazu finde ich in den Golfregeln keine Antwort."
-            - Antworte auf Deutsch, knapp und verständlich (höchstens etwa 150 Wörter), und nenne die \
-            Regelnummer(n).
-            """;
+            """.formatted(NO_ANSWER_TEXT);
 
     /** Ein Bereich des Buchs mit eigener Zerlege-Strategie. */
     public record Section(String name, int firstPage, int lastPage, Chunker chunker) {

@@ -18,7 +18,8 @@ import com.zuluindustries.rag.store.memory.InMemoryVectorStore;
  * oder Suche. Bewertet wird von Hand.
  *
  * <p>Temperatur 0, damit Unterschiede von der Variante kommen und nicht vom Zufall.
- * Kosten: etwa 16 Antworten zu je rund 3.000–5.000 Tokens.
+ * Kosten: etwa 20 Antworten zu je rund 3.000–5.000 Tokens (Fragen unter der
+ * Schwelle kosten nur das Einbetten der Frage).
  */
 public class AnswerEvaluation {
 
@@ -32,7 +33,9 @@ public class AnswerEvaluation {
             "Mein Ball liegt in einem Kaninchenloch. Bekomme ich Erleichterung?",
             "Wer hat die Open Championship 2024 gewonnen?",                         // Fangfrage
             "Wie hoch ist der Jahresbeitrag in meinem Golfclub?",                   // Fangfrage
-            "Wie spielt man Stableford, und darf ich dabei einen Ball aufnehmen?"); // teils beantwortbar
+            "Wie spielt man Stableford, und darf ich dabei einen Ball aufnehmen?",  // teils beantwortbar
+            "Wie verbessere ich meinen Abschlag?",                                  // Grenzfall (Technik)
+            "Was kostet eine Runde Golf auf einem Platz in Bayern?");               // Grenzfall
 
     /** Eine Variante, die verglichen wird. */
     private record Variant(String name, AnswerGenerator generator) {
@@ -45,11 +48,14 @@ public class AnswerEvaluation {
         SiblingExpander siblings = new SiblingExpander(store.documents(), GolfRules.MAX_CONTEXT_CHUNKS,
                 GolfRules.MAX_CONTEXT_CHARS);
 
+        AnswerGenerator.Settings withSiblings = AnswerGenerator.Settings.of(GolfRules.SYSTEM_PROMPT, TOP_K)
+                .withExpander(siblings);
         List<Variant> variants = List.of(
-                new Variant("V3, nur Suchtreffer",
-                        new AnswerGenerator(retriever, chatModel, GolfRules.SYSTEM_PROMPT, TOP_K)),
-                new Variant("V3, mit Geschwister-Abschnitten",
-                        new AnswerGenerator(retriever, chatModel, GolfRules.SYSTEM_PROMPT, TOP_K, siblings)));
+                new Variant("Geschwister, ohne Schwelle",
+                        new AnswerGenerator(retriever, chatModel, withSiblings)),
+                new Variant("Geschwister + Schwelle " + Scaleway.MIN_ANSWER_SCORE + " (wie AskApp)",
+                        new AnswerGenerator(retriever, chatModel,
+                                withSiblings.withMinScore(Scaleway.MIN_ANSWER_SCORE, GolfRules.NO_ANSWER_TEXT))));
 
         for (int q = 0; q < QUESTIONS.size(); q++) {
             String question = QUESTIONS.get(q);
@@ -61,6 +67,9 @@ public class AnswerEvaluation {
                 System.out.println();
                 System.out.println("--- " + variant.name() + " ---");
                 System.out.println(answer.text());
+                if (!answer.modelAsked()) {
+                    System.out.println("(Sprachmodell nicht gefragt – bester Treffer unter der Schwelle)");
+                }
                 printSources(answer.sources());
             }
         }

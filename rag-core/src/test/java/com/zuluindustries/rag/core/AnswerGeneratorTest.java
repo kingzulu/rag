@@ -1,6 +1,7 @@
 package com.zuluindustries.rag.core;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -70,6 +71,28 @@ class AnswerGeneratorTest {
 
         assertEquals(List.of("bunker", "ergaenzt"), answer.sources().stream().map(s -> s.document().id()).toList());
         assertTrue(chat.received.get(1).content().contains("[2] Ergänzte Quelle"));
+    }
+
+    @Test
+    void skipsChatModelWhenBestHitIsBelowMinScore() {
+        Fakes.WordCountEmbeddingModel embeddings = new Fakes.WordCountEmbeddingModel();
+        Fakes.MapVectorStore store = new Fakes.MapVectorStore();
+        new Indexer(embeddings, store).index(List.of(new Document("bunker", "Bunker")));
+        RecordingChatModel chat = new RecordingChatModel();
+        AnswerGenerator generator = new AnswerGenerator(new Retriever(embeddings, store, ""), chat,
+                AnswerGenerator.Settings.of("System", 1).withMinScore(0.5, "Keine Antwort."));
+
+        // Enthält keines der Wörter Bunker/Grün/Ball → Ähnlichkeit 0
+        AnswerGenerator.Answer offTopic = generator.answer("Wie koche ich Spaghetti?");
+
+        assertEquals("Keine Antwort.", offTopic.text());
+        assertFalse(offTopic.modelAsked());
+        assertTrue(chat.received.isEmpty(), "Das Sprachmodell darf nicht gefragt werden");
+
+        AnswerGenerator.Answer onTopic = generator.answer("Bunker?");
+
+        assertTrue(onTopic.modelAsked());
+        assertEquals(2, chat.received.size());
     }
 
     @Test

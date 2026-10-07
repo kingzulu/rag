@@ -20,6 +20,8 @@ import com.zuluindustries.rag.store.memory.InMemoryVectorStore;
  *
  * <p>Die Suchtreffer werden um ihre Geschwister-Abschnitte ergänzt (z. B. 19.2a
  * und 19.2b zu einem Treffer in 19.2c), damit das Modell vollständige Quellen hat.
+ * Erreicht kein Treffer die Schwelle {@link Scaleway#MIN_ANSWER_SCORE}, wird das
+ * Sprachmodell nicht gefragt.
  *
  * <p>Braucht den Suchindex (zuerst IndexApp ausführen) und die Umgebungsvariable
  * SCW_SECRET_KEY.
@@ -31,8 +33,10 @@ public class AskApp {
         Retriever retriever = new Retriever(Scaleway.embeddingModel(), store, Scaleway.QUERY_INSTRUCTION);
         SiblingExpander siblings = new SiblingExpander(store.documents(), GolfRules.MAX_CONTEXT_CHUNKS,
                 GolfRules.MAX_CONTEXT_CHARS);
-        AnswerGenerator generator = new AnswerGenerator(retriever, Scaleway.chatModel(), GolfRules.SYSTEM_PROMPT,
-                GolfRules.ANSWER_TOP_K, siblings);
+        AnswerGenerator.Settings settings = AnswerGenerator.Settings.of(GolfRules.SYSTEM_PROMPT, GolfRules.ANSWER_TOP_K)
+                .withExpander(siblings)
+                .withMinScore(Scaleway.MIN_ANSWER_SCORE, GolfRules.NO_ANSWER_TEXT);
+        AnswerGenerator generator = new AnswerGenerator(retriever, Scaleway.chatModel(), settings);
         System.out.println("Golfregel-Assistent (" + Scaleway.CHAT_MODEL + ")");
 
         if (args.length > 0) {
@@ -58,6 +62,11 @@ public class AskApp {
 
         System.out.println();
         System.out.println(answer.text());
+        if (!answer.modelAsked()) {
+            System.out.printf("(Sprachmodell nicht gefragt: bester Treffer %.3f liegt unter der Schwelle %.2f)%n",
+                    answer.sources().isEmpty() ? 0.0 : answer.sources().getFirst().score(),
+                    Scaleway.MIN_ANSWER_SCORE);
+        }
         System.out.println();
         System.out.println("Quellen (" + millis + " ms; \"erg.\" = als Geschwister-Abschnitt ergänzt):");
         List<SearchResult> sources = answer.sources();

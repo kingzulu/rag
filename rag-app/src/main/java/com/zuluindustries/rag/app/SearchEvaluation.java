@@ -20,6 +20,9 @@ import com.zuluindustries.rag.core.chunk.ChunkAssembler;
  * <li>Treffer@1: Anteil der Fragen, bei denen der erste Treffer richtig ist</li>
  * <li>Treffer@5: Anteil der Fragen, bei denen ein richtiger Treffer unter den ersten fünf ist</li>
  * </ul>
+ *
+ * <p>Zusätzlich: der beste Ähnlichkeitswert je Frage für Regelfragen und
+ * themenfremde Fragen, als Grundlage für die Schwelle in AskApp.
  */
 public class SearchEvaluation {
 
@@ -57,12 +60,27 @@ public class SearchEvaluation {
             new TestQuestion("Wer gewinnt im Zählspiel?", List.of("3.3a")),
             new TestQuestion("Wie schnell muss ich spielen?", List.of("5.6b")));
 
+    /** Fragen, auf die die Golfregeln keine Antwort haben – zum Bestimmen der Schwelle. */
+    private static final List<String> OFF_TOPIC_QUESTIONS = List.of(
+            "Wer hat die Open Championship 2024 gewonnen?",
+            "Wie hoch ist der Jahresbeitrag in meinem Golfclub?",
+            "Wie wird das Wetter morgen in München?",
+            "Wie koche ich Spaghetti Carbonara?",
+            "Wie mache ich meine Steuererklärung?",
+            "Erkläre mir die Relativitätstheorie.",
+            // Grenzfälle: Golf, aber keine Regelfrage
+            "Welchen Golfschläger soll ich als Anfänger kaufen?",
+            "Wie verbessere ich meinen Abschlag?",
+            "Was kostet eine Runde Golf auf einem Platz in Bayern?");
+
     public static void main(String[] args) throws IOException {
         EmbeddingModel model = Scaleway.embeddingModel();
         VectorStore store = SearchIndex.loadExisting();
 
-        List<Integer> ranksPlain = ranks(new Retriever(model, store, ""));
-        List<Integer> ranksInstruct = ranks(new Retriever(model, store, Scaleway.QUERY_INSTRUCTION));
+        Retriever plain = new Retriever(model, store, "");
+        Retriever instruct = new Retriever(model, store, Scaleway.QUERY_INSTRUCTION);
+        List<Integer> ranksPlain = ranks(plain);
+        List<Integer> ranksInstruct = ranks(instruct);
 
         System.out.println("Platz der ersten richtigen Antwort (– = nicht unter den ersten " + TOP_K + ")");
         System.out.println();
@@ -75,6 +93,54 @@ public class SearchEvaluation {
         System.out.println();
         printSummary("Ohne Präfix     ", ranksPlain);
         printSummary("Mit Anweisung   ", ranksInstruct);
+
+        printBestScores(instruct);
+    }
+
+    /** Ein Ähnlichkeitswert mit der zugehörigen Frage. */
+    private record ScoredQuestion(double score, String question) {
+    }
+
+    /**
+     * Gibt für jede Frage den besten Ähnlichkeitswert aus (mit Anweisung, wie in
+     * AskApp) – getrennt nach Regelfragen und themenfremden Fragen – und schlägt
+     * eine Schwelle vor: mit Sicherheitsabstand unter der schwächsten Regelfrage.
+     */
+    private static void printBestScores(Retriever retriever) {
+        List<ScoredQuestion> rules = bestScores(retriever, QUESTIONS.stream().map(TestQuestion::question).toList());
+        List<ScoredQuestion> offTopic = bestScores(retriever, OFF_TOPIC_QUESTIONS);
+
+        System.out.println();
+        System.out.println("Bester Ähnlichkeitswert je Frage (mit Anweisung)");
+        System.out.println();
+        System.out.println("Regelfragen:");
+        rules.forEach(scored -> System.out.printf("  %.3f  %s%n", scored.score(), scored.question()));
+        System.out.println();
+        System.out.println("Themenfremde Fragen und Grenzfälle:");
+        offTopic.forEach(scored -> System.out.printf("  %.3f  %s%n", scored.score(), scored.question()));
+
+        ScoredQuestion weakestRule = rules.getLast();
+        ScoredQuestion strongestOffTopic = offTopic.getFirst();
+        double safetyMargin = 0.05;
+        double suggestion = Math.floor((weakestRule.score() - safetyMargin) * 100) / 100;
+        long blocked = offTopic.stream().filter(scored -> scored.score() < suggestion).count();
+
+        System.out.println();
+        System.out.printf("Schwächste Regelfrage:    %.3f  (%s)%n", weakestRule.score(), weakestRule.question());
+        System.out.printf("Stärkste themenfremde:    %.3f  (%s)%n", strongestOffTopic.score(),
+                strongestOffTopic.question());
+        System.out.printf("Abstand:                  %.3f%n", weakestRule.score() - strongestOffTopic.score());
+        System.out.printf("Vorschlag Schwelle:       %.2f  (%.2f unter der schwächsten Regelfrage)%n",
+                suggestion, safetyMargin);
+        System.out.printf("Damit abgefangen:         %d von %d themenfremden Fragen%n", blocked, offTopic.size());
+    }
+
+    /** Bester Ähnlichkeitswert je Frage, absteigend sortiert. */
+    private static List<ScoredQuestion> bestScores(Retriever retriever, List<String> questions) {
+        return questions.stream()
+                .map(question -> new ScoredQuestion(retriever.search(question, 1).getFirst().score(), question))
+                .sorted((a, b) -> Double.compare(b.score(), a.score()))
+                .toList();
     }
 
     /** Für jede Testfrage: Platz der ersten richtigen Antwort (1 = ganz oben), 0 = nicht gefunden. */
