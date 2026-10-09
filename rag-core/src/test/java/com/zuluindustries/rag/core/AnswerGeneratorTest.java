@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
@@ -103,7 +104,7 @@ class AnswerGeneratorTest {
                 new Document("regel-gruen", "Regeln für das Grün"),
                 new Document("regel-ball", "Ball im Spiel")));
         RecordingChatModel chat = new RecordingChatModel();
-        QueryRewriter addGreen = question -> question + " (Grün)";
+        QueryRewriter addGreen = question -> Optional.of(question + " (Grün)");
         AnswerGenerator generator = new AnswerGenerator(new Retriever(embeddings, store, ""), chat,
                 AnswerGenerator.Settings.of("System", 1).withRewriter(addGreen));
 
@@ -115,23 +116,42 @@ class AnswerGeneratorTest {
     }
 
     @Test
-    void checksThresholdWithOriginalQuestionBeforeRewriting() {
+    void stopsWithoutSearchingWhenRewriterRecognizesOffTopicQuestion() {
         Fakes.WordCountEmbeddingModel embeddings = new Fakes.WordCountEmbeddingModel();
         Fakes.MapVectorStore store = new Fakes.MapVectorStore();
         new Indexer(embeddings, store).index(List.of(new Document("regel-bunker", "Bunker")));
-        List<String> rewritten = new ArrayList<>();
-        QueryRewriter recordingRewriter = question -> {
-            rewritten.add(question);
-            return question + " (Bunker)";   // würde die Frage künstlich passend machen
-        };
-        AnswerGenerator generator = new AnswerGenerator(new Retriever(embeddings, store, ""), new RecordingChatModel(),
-                AnswerGenerator.Settings.of("System", 1).withMinScore(0.5, "Keine Antwort.")
-                        .withRewriter(recordingRewriter));
+        embeddings.embeddedTexts.clear();
+        RecordingChatModel chat = new RecordingChatModel();
+        QueryRewriter offTopic = question -> Optional.empty();   // "keine Regelfrage"
+        AnswerGenerator generator = new AnswerGenerator(new Retriever(embeddings, store, ""), chat,
+                AnswerGenerator.Settings.of("System", 1).withMinScore(0.5, "Keine Antwort.").withRewriter(offTopic));
 
         AnswerGenerator.Answer answer = generator.answer("Wie koche ich Spaghetti?");
 
         assertEquals("Keine Antwort.", answer.text());
-        assertTrue(rewritten.isEmpty(), "Unter der Schwelle wird gar nicht erst umformuliert");
+        assertFalse(answer.modelAsked());
+        assertTrue(answer.sources().isEmpty());
+        assertTrue(embeddings.embeddedTexts.isEmpty(), "Es wird gar nicht erst gesucht");
+        assertTrue(chat.received.isEmpty(), "Das Antwort-Modell wird nicht gefragt");
+    }
+
+    @Test
+    void checksThresholdWithRewrittenSearchText() {
+        Fakes.WordCountEmbeddingModel embeddings = new Fakes.WordCountEmbeddingModel();
+        Fakes.MapVectorStore store = new Fakes.MapVectorStore();
+        new Indexer(embeddings, store).index(List.of(new Document("regel-bunker", "Bunker")));
+        RecordingChatModel chat = new RecordingChatModel();
+        QueryRewriter toRuleLanguage = question -> Optional.of("Ball im Bunker");   // "übersetzt"
+        AnswerGenerator generator = new AnswerGenerator(new Retriever(embeddings, store, ""), chat,
+                AnswerGenerator.Settings.of("System", 1).withMinScore(0.5, "Keine Antwort.")
+                        .withRewriter(toRuleLanguage));
+
+        // Die Originalfrage enthält kein "Bunker" – erst der übersetzte Suchtext erreicht die Schwelle.
+        AnswerGenerator.Answer answer = generator.answer("Mein Ball liegt im Sand neben dem Grün.");
+
+        assertTrue(answer.modelAsked());
+        assertEquals("Ball im Bunker", answer.searchText());
+        assertTrue(chat.received.get(1).content().endsWith("Frage: Mein Ball liegt im Sand neben dem Grün."));
     }
 
     @Test

@@ -29,17 +29,22 @@ public final class Scaleway {
             "<instruct>Given a web search query, retrieve relevant passages that answer the query.\n<query>";
 
     /**
-     * Mindest-Ähnlichkeit des besten Suchtreffers, damit das Chat-Modell gefragt wird.
+     * Mindest-Ähnlichkeit des besten Suchtreffers, damit das Chat-Modell gefragt wird –
+     * gemessen für die Suche mit einer hypothetischen Regelstelle (HyDE, ohne Anweisung).
      *
-     * <p>Gemessen am 7.10.2026 mit SearchEvaluation (mit QUERY_INSTRUCTION):
-     * Regelfragen 0,363–0,507, eindeutig themenfremde Fragen 0,105–0,215,
-     * Grenzfälle wie "Wie verbessere ich meinen Abschlag?" bis 0,391. 0,28 liegt
-     * in der Lücke zwischen Regelfragen und eindeutig themenfremden Fragen;
-     * Grenzfälle erreichen das Chat-Modell und werden dort per Systemanweisung behandelt.
+     * <p>Messung 9.10.2026 (SearchEvaluation, Variante C, HyDE-Prompt V2): Regelfragen ab
+     * 0,662, auch umgangssprachliche; keine fälschlich abgewiesen. Themenfremde Fragen
+     * erkennt schon der Übersetzer ("keine", 9 von 9); die Schwelle ist nur das
+     * Sicherheitsnetz, mit Abstand darunter. Wie hoch eine themenfremde Frage käme, die
+     * der Übersetzer durchlässt, ist nicht gemessen (ihre Werte 0,563 und darunter
+     * stammen aus der Suche mit der rohen Frage) – darum bewusst nicht höher.
      *
-     * <p><b>Hängt vom Embedding-Modell und der Anweisung ab – bei einem Wechsel neu messen!</b>
+     * <p>Vorher (7.10.2026, Originalfrage mit Anweisung) lag sie bei 0,28 – und wies die
+     * echte Frage "ins wasser geschlagen, gelb markiert" (0,268) fälschlich ab.
+     *
+     * <p><b>Hängt vom Embedding-Modell und davon ab, womit gesucht wird – bei einer Änderung neu messen!</b>
      */
-    public static final double MIN_ANSWER_SCORE = 0.28;
+    public static final double MIN_ANSWER_SCORE = 0.45;
 
     private Scaleway() {
     }

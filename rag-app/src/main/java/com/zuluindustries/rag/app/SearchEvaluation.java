@@ -6,11 +6,14 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
-import java.util.function.Function;
-import java.util.function.Predicate;
+import java.util.stream.Stream;
 
+import com.zuluindustries.rag.core.ChatModel;
+import com.zuluindustries.rag.core.ChatQueryRewriter;
 import com.zuluindustries.rag.core.EmbeddingModel;
+import com.zuluindustries.rag.core.QueryRewriter;
 import com.zuluindustries.rag.core.Retriever;
 import com.zuluindustries.rag.core.SearchResult;
 import com.zuluindustries.rag.core.TermQueryRewriter;
@@ -19,18 +22,19 @@ import com.zuluindustries.rag.store.memory.InMemoryVectorStore;
 
 /**
  * Misst die Suchqualität mit Testfragen, deren richtige Antwort (Regelnummer
- * oder Definitionsbegriff) bekannt ist – und vergleicht dabei drei Varianten:
- * Fragen ohne Präfix, Fragen mit der Anweisung, die das Modell erwartet, und
- * zusätzlich um Fachbegriffe ergänzte Fragen (Query Expansion).
- *
- * <p>Kennzahlen:
+ * oder Definitionsbegriff) bekannt ist, und vergleicht, wie die Frage vor der
+ * Suche in Regelsprache übersetzt wird:
  * <ul>
- * <li>Treffer@1: Anteil der Fragen, bei denen der erste Treffer richtig ist</li>
- * <li>Treffer@5: Anteil der Fragen, bei denen ein richtiger Treffer unter den ersten fünf ist</li>
+ * <li><b>Orig.</b> – die Frage unverändert (mit der Anweisung des Embedding-Modells)</li>
+ * <li><b>A</b> – Frage + Fachbegriffe aus der Begriffsliste</li>
+ * <li><b>B</b> – die Frage, vom Sprachmodell in Regelsprache umformuliert</li>
+ * <li><b>C</b> – ein hypothetischer Absatz im Stil des Regelbuchs ("HyDE"); weil das
+ * ein Text wie die gespeicherten Chunks ist und keine Frage, ohne Anweisung eingebettet</li>
  * </ul>
  *
- * <p>Zusätzlich: der beste Ähnlichkeitswert je Frage für Regelfragen und
- * themenfremde Fragen, als Grundlage für die Schwelle in AskApp.
+ * <p>Kennzahlen: Treffer@1 / Treffer@5 (richtige Quelle auf Platz 1 / unter den
+ * ersten fünf) und der beste Ähnlichkeitswert von Regelfragen und themenfremden
+ * Fragen – als Grundlage für die Schwelle.
  */
 public class SearchEvaluation {
 
@@ -43,7 +47,7 @@ public class SearchEvaluation {
     private record TestQuestion(String question, List<String> expected) {
     }
 
-    private static final List<TestQuestion> QUESTIONS = List.of(
+    private static final List<TestQuestion> RULE_QUESTIONS = List.of(
             new TestQuestion("Darf ich im Bunker vor dem Schlag den Sand berühren?", List.of("12.2b")),
             new TestQuestion("Mein Ball liegt im tiefen Busch und ich kann ihn nicht spielen. Was kann ich tun?",
                     List.of("19")),
@@ -68,6 +72,18 @@ public class SearchEvaluation {
             new TestQuestion("Wer gewinnt im Zählspiel?", List.of("3.3a")),
             new TestQuestion("Wie schnell muss ich spielen?", List.of("5.6b")));
 
+    /** Umgangssprachlich – so, wie man auf dem Platz fragt (die ersten beiden aus echter Nutzung). */
+    private static final List<TestQuestion> COLLOQUIAL_QUESTIONS = List.of(
+            new TestQuestion("Ich habe ins wasser geschlagen, es ist gelb markiert. wie verhalte ich mich?",
+                    List.of("17.1")),
+            new TestQuestion("ich habe abgeschlagen, weiß aber nicht, ob ich meinen ball finden werde. was mache ich",
+                    List.of("18.3", "Provisorischer Ball")),
+            new TestQuestion("Mein Ball ist im Teich gelandet, da stehen rote Pfähle. Was jetzt?", List.of("17.1")),
+            new TestQuestion("Ball ist weg, ich find ihn nicht mehr. Und nun?", List.of("18.2", "Verloren")));
+
+    private static final List<TestQuestion> TEST_QUESTIONS =
+            Stream.concat(RULE_QUESTIONS.stream(), COLLOQUIAL_QUESTIONS.stream()).toList();
+
     /** Fragen, auf die die Golfregeln keine Antwort haben – zum Bestimmen der Schwelle. */
     private static final List<String> OFF_TOPIC_QUESTIONS = List.of(
             "Wer hat die Open Championship 2024 gewonnen?",
@@ -81,130 +97,152 @@ public class SearchEvaluation {
             "Wie verbessere ich meinen Abschlag?",
             "Was kostet eine Runde Golf auf einem Platz in Bayern?");
 
+    /**
+     * Eine Art, zu einer Frage zu suchen. Suchtexte und deren Vektoren werden
+     * vorab einmal berechnet – jede Übersetzung und jedes Einbetten kostet einen
+     * Aufruf beim Anbieter, die Suche selbst danach nichts mehr.
+     */
+    private record Variant(String name, Retriever retriever, Map<String, String> searchTexts,
+            Map<String, float[]> vectors, Set<String> rejected) {
+
+        List<SearchResult> search(String question, int topK) {
+            return retriever.search(vectors.get(question), topK, document -> true);
+        }
+
+        double bestScore(String question) {
+            return search(question, 1).getFirst().score();
+        }
+
+        /** Hat der Übersetzer die Frage als themenfremd erkannt? (Gesucht wird dann mit der Frage selbst.) */
+        boolean rejected(String question) {
+            return rejected.contains(question);
+        }
+    }
+
     public static void main(String[] args) throws IOException {
         EmbeddingModel model = Scaleway.embeddingModel();
         InMemoryVectorStore store = SearchIndex.loadExisting();
+        ChatModel chat = Scaleway.chatModel(0.0);
 
-        Retriever plain = new Retriever(model, store, "");
         Retriever instruct = new Retriever(model, store, Scaleway.QUERY_INSTRUCTION);
-        TermQueryRewriter rewriter = new TermQueryRewriter(Scaleway.chatModel(0.0),
-                GolfRules.definitionTerms(store.documents()), GolfRules.MAX_QUERY_TERMS);
+        Retriever plain = new Retriever(model, store, "");
+        List<String> allQuestions = new ArrayList<>(TEST_QUESTIONS.stream().map(TestQuestion::question).toList());
+        allQuestions.addAll(OFF_TOPIC_QUESTIONS);
 
-        // Jede Frage nur einmal umformulieren lassen (kostet einen Modellaufruf) und das Ergebnis merken.
-        Map<String, String> rewritten = new LinkedHashMap<>();
-        QUESTIONS.forEach(test -> rewritten.put(test.question(), rewriter.rewrite(test.question())));
+        System.out.println("Übersetze " + allQuestions.size() + " Fragen mit drei Varianten (dauert etwa eine Minute) …");
+        List<Variant> variants = List.of(
+                variant("Orig.", QueryRewriter.NONE, instruct, allQuestions),
+                variant("A", new TermQueryRewriter(chat, GolfRules.definitionTerms(store.documents()),
+                        GolfRules.MAX_QUERY_TERMS), instruct, allQuestions),
+                variant("B", new ChatQueryRewriter(chat, GolfRules.REPHRASE_PROMPT), instruct, allQuestions),
+                variant("C", new ChatQueryRewriter(chat, GolfRules.HYPOTHETICAL_PASSAGE_PROMPT), plain, allQuestions));
 
-        List<Integer> ranksPlain = ranks(question -> plain.search(question, TOP_K));
-        List<Integer> ranksInstruct = ranks(question -> instruct.search(question, TOP_K));
-        List<Integer> ranksTerms = ranks(question -> instruct.search(rewritten.get(question), TOP_K));
+        printRanks(variants);
+        printSeparation(variants);
+        printTranslations(variants);
+    }
 
+    private static Variant variant(String name, QueryRewriter rewriter, Retriever retriever, List<String> questions) {
+        Map<String, String> searchTexts = new LinkedHashMap<>();
+        Map<String, float[]> vectors = new LinkedHashMap<>();
+        Set<String> rejected = new HashSet<>();
+        for (String question : questions) {
+            Optional<String> rewritten = rewriter.rewrite(question);
+            if (rewritten.isEmpty()) {
+                rejected.add(question);
+            }
+            String searchText = rewritten.orElse(question);
+            searchTexts.put(question, searchText);
+            vectors.put(question, retriever.embed(searchText));
+        }
+        return new Variant(name, retriever, searchTexts, vectors, rejected);
+    }
+
+    /** Platz der richtigen Quelle je Frage und Variante, dazu Treffer@1 / Treffer@5. */
+    private static void printRanks(List<Variant> variants) {
+        List<List<Integer>> ranks = variants.stream().map(SearchEvaluation::ranks).toList();
+
+        System.out.println();
         System.out.println("Platz der ersten richtigen Antwort (– = nicht unter den ersten " + TOP_K + ")");
         System.out.println();
-        System.out.println(" #  ohne  mit   mit    Frage");
-        System.out.println("    Präfix Anw. Begr.");
-        for (int i = 0; i < QUESTIONS.size(); i++) {
-            System.out.printf("%2d   %-4s %-4s %-5s  %s%n", i + 1, format(ranksPlain.get(i)),
-                    format(ranksInstruct.get(i)), format(ranksTerms.get(i)), QUESTIONS.get(i).question());
+        StringBuilder header = new StringBuilder(" # ");
+        variants.forEach(variant -> header.append(String.format(" %-5s", variant.name())));
+        System.out.println(header.append("  Frage"));
+        for (int q = 0; q < TEST_QUESTIONS.size(); q++) {
+            if (q == RULE_QUESTIONS.size()) {
+                System.out.println("    — umgangssprachlich —");
+            }
+            StringBuilder row = new StringBuilder(String.format("%2d ", q + 1));
+            for (List<Integer> variantRanks : ranks) {
+                row.append(String.format(" %-5s", format(variantRanks.get(q))));
+            }
+            System.out.println(row.append("  ").append(TEST_QUESTIONS.get(q).question()));
         }
         System.out.println();
-        printSummary("Ohne Präfix     ", ranksPlain);
-        printSummary("Mit Anweisung   ", ranksInstruct);
-        printSummary("Mit Begriffen   ", ranksTerms);
-
-        System.out.println();
-        System.out.println("Ergänzte Begriffe je Frage:");
-        rewritten.forEach((question, searchText) -> System.out.println("  " + (searchText.equals(question)
-                ? "(keine)  " + question
-                : searchText)));
-
-        printBestScores(instruct);
-        printClosestDefinitions(instruct);
-    }
-
-    /**
-     * Gibt für jede Frage die drei Definitionen aus, die ihr am ähnlichsten sind –
-     * als Grundlage für eine Zusatzsuche, die passende Definitionen zu den Quellen
-     * ergänzt. Lange Definitionen sind auf mehrere Chunks verteilt; jeder Begriff
-     * erscheint nur einmal (mit seinem besten Teil).
-     */
-    private static void printClosestDefinitions(Retriever retriever) {
-        System.out.println();
-        System.out.println("Ähnlichste Definitionen je Frage (mit Anweisung)");
-        List<String> questions = new ArrayList<>(QUESTIONS.stream().map(TestQuestion::question).toList());
-        questions.addAll(OFF_TOPIC_QUESTIONS);
-        for (String question : questions) {
-            List<SearchResult> definitions = retriever.search(retriever.embed(question), 10, GolfRules::isDefinition);
-            System.out.println();
-            System.out.println(question);
-            definitions.stream()
-                    .filter(distinctBy(result -> result.document().metadata().get(ChunkAssembler.NUMBER_KEY)))
-                    .limit(3)
-                    .forEach(result -> System.out.printf("   %.3f  %s%n", result.score(),
-                            result.document().metadata().get(ChunkAssembler.NUMBER_KEY)));
+        for (int v = 0; v < variants.size(); v++) {
+            printSummary(String.format("%-6s", variants.get(v).name()), ranks.get(v));
         }
     }
 
-    /** Filter, der nur das erste Element mit einem bestimmten Schlüssel durchlässt. */
-    private static <T> Predicate<T> distinctBy(Function<T, String> key) {
-        Set<String> seen = new HashSet<>();
-        return element -> seen.add(key.apply(element));
-    }
-
-    /** Ein Ähnlichkeitswert mit der zugehörigen Frage. */
-    private record ScoredQuestion(double score, String question) {
-    }
-
     /**
-     * Gibt für jede Frage den besten Ähnlichkeitswert aus (mit Anweisung, wie in
-     * AskApp) – getrennt nach Regelfragen und themenfremden Fragen – und schlägt
-     * eine Schwelle vor: mit Sicherheitsabstand unter der schwächsten Regelfrage.
+     * Wie gut trennt der beste Ähnlichkeitswert Regelfragen von themenfremden
+     * Fragen? Daraus ergibt sich die Schwelle: mit Sicherheitsabstand unter der
+     * schwächsten Regelfrage.
      */
-    private static void printBestScores(Retriever retriever) {
-        List<ScoredQuestion> rules = bestScores(retriever, QUESTIONS.stream().map(TestQuestion::question).toList());
-        List<ScoredQuestion> offTopic = bestScores(retriever, OFF_TOPIC_QUESTIONS);
-
-        System.out.println();
-        System.out.println("Bester Ähnlichkeitswert je Frage (mit Anweisung)");
-        System.out.println();
-        System.out.println("Regelfragen:");
-        rules.forEach(scored -> System.out.printf("  %.3f  %s%n", scored.score(), scored.question()));
-        System.out.println();
-        System.out.println("Themenfremde Fragen und Grenzfälle:");
-        offTopic.forEach(scored -> System.out.printf("  %.3f  %s%n", scored.score(), scored.question()));
-
-        ScoredQuestion weakestRule = rules.getLast();
-        ScoredQuestion strongestOffTopic = offTopic.getFirst();
+    private static void printSeparation(List<Variant> variants) {
         double safetyMargin = 0.05;
-        double suggestion = Math.floor((weakestRule.score() - safetyMargin) * 100) / 100;
-        long blocked = offTopic.stream().filter(scored -> scored.score() < suggestion).count();
-
         System.out.println();
-        System.out.printf("Schwächste Regelfrage:    %.3f  (%s)%n", weakestRule.score(), weakestRule.question());
-        System.out.printf("Stärkste themenfremde:    %.3f  (%s)%n", strongestOffTopic.score(),
-                strongestOffTopic.question());
-        System.out.printf("Abstand:                  %.3f%n", weakestRule.score() - strongestOffTopic.score());
-        System.out.printf("Vorschlag Schwelle:       %.2f  (%.2f unter der schwächsten Regelfrage)%n",
-                suggestion, safetyMargin);
-        System.out.printf("Damit abgefangen:         %d von %d themenfremden Fragen%n", blocked, offTopic.size());
+        System.out.println("Trennung Regelfragen / themenfremde Fragen (bester Ähnlichkeitswert)");
+        for (Variant variant : variants) {
+            String weakestRule = TEST_QUESTIONS.stream().map(TestQuestion::question)
+                    .min((a, b) -> Double.compare(variant.bestScore(a), variant.bestScore(b))).orElseThrow();
+            String strongestOffTopic = OFF_TOPIC_QUESTIONS.stream()
+                    .max((a, b) -> Double.compare(variant.bestScore(a), variant.bestScore(b))).orElseThrow();
+            double weakest = variant.bestScore(weakestRule);
+            double strongest = variant.bestScore(strongestOffTopic);
+            double suggestion = Math.floor((weakest - safetyMargin) * 100) / 100;
+            long blocked = OFF_TOPIC_QUESTIONS.stream().filter(q -> variant.bestScore(q) < suggestion).count();
+            List<String> offTopicPassed = OFF_TOPIC_QUESTIONS.stream().filter(q -> !variant.rejected(q)).toList();
+            List<String> rulesRejected = TEST_QUESTIONS.stream().map(TestQuestion::question)
+                    .filter(variant::rejected).toList();
+
+            System.out.println();
+            System.out.println("--- " + variant.name() + " ---");
+            System.out.printf("  Schwächste Regelfrage:  %.3f  (%s)%n", weakest, weakestRule);
+            System.out.printf("  Stärkste themenfremde:  %.3f  (%s)%n", strongest, strongestOffTopic);
+            System.out.printf("  Abstand:                %.3f%n", weakest - strongest);
+            System.out.printf("  Vorschlag Schwelle:     %.2f  → fängt %d von %d themenfremden Fragen ab%n",
+                    suggestion, blocked, OFF_TOPIC_QUESTIONS.size());
+            if (!variant.name().equals("Orig.")) {
+                System.out.printf("  Als themenfremd erkannt (\"keine\"):  %d von %d themenfremden%n",
+                        OFF_TOPIC_QUESTIONS.size() - offTopicPassed.size(), OFF_TOPIC_QUESTIONS.size());
+                offTopicPassed.forEach(q -> System.out.println("      durchgelassen: " + q));
+                System.out.printf("  Fälschlich abgewiesen:              %d von %d Regelfragen%n",
+                        rulesRejected.size(), TEST_QUESTIONS.size());
+                rulesRejected.forEach(q -> System.out.println("      abgewiesen: " + q));
+            }
+        }
     }
 
-    /** Bester Ähnlichkeitswert je Frage, absteigend sortiert. */
-    private static List<ScoredQuestion> bestScores(Retriever retriever, List<String> questions) {
-        return questions.stream()
-                .map(question -> new ScoredQuestion(retriever.search(question, 1).getFirst().score(), question))
-                .sorted((a, b) -> Double.compare(b.score(), a.score()))
-                .toList();
+    /** Die Übersetzungen der umgangssprachlichen Fragen – zum Nachvollziehen. */
+    private static void printTranslations(List<Variant> variants) {
+        System.out.println();
+        System.out.println("Übersetzungen der umgangssprachlichen Fragen");
+        for (TestQuestion test : COLLOQUIAL_QUESTIONS) {
+            System.out.println();
+            System.out.println(test.question());
+            for (Variant variant : variants.subList(1, variants.size())) {
+                String text = variant.searchTexts().get(test.question()).replace('\n', ' ');
+                System.out.printf("  %s: %s%n", variant.name(), variant.rejected(test.question()) ? "(als themenfremd abgewiesen)" : text);
+            }
+        }
     }
 
-    /**
-     * Für jede Testfrage: Platz der ersten richtigen Antwort (1 = ganz oben), 0 = nicht gefunden.
-     *
-     * @param search wie zu einer Frage gesucht wird (z. B. mit oder ohne ergänzte Begriffe)
-     */
-    private static List<Integer> ranks(Function<String, List<SearchResult>> search) {
+    /** Für jede Testfrage: Platz der ersten richtigen Antwort (1 = ganz oben), 0 = nicht gefunden. */
+    private static List<Integer> ranks(Variant variant) {
         List<Integer> ranks = new ArrayList<>();
-        for (TestQuestion test : QUESTIONS) {
-            List<SearchResult> results = search.apply(test.question());
+        for (TestQuestion test : TEST_QUESTIONS) {
+            List<SearchResult> results = variant.search(test.question(), TOP_K);
             int rank = 0;
             for (int i = 0; i < results.size() && rank == 0; i++) {
                 String number = results.get(i).document().metadata().get(ChunkAssembler.NUMBER_KEY);

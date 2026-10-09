@@ -1,6 +1,7 @@
 package com.zuluindustries.rag.core;
 
 import java.util.List;
+import java.util.Optional;
 
 import com.zuluindustries.rag.core.chunk.ChunkAssembler;
 
@@ -10,17 +11,18 @@ import com.zuluindustries.rag.core.chunk.ChunkAssembler;
  *
  * <p>Ablauf:
  * <ol>
- * <li>Mit der Originalfrage suchen und die Schwelle prüfen. Ist schon der beste
- * Treffer nicht ähnlich genug (unter {@link Settings#minScore()}), passt nichts im
- * Dokument zur Frage: Das Sprachmodell wird gar nicht erst gefragt – das spart
- * Kosten und schließt erfundene Antworten auf themenfremde Fragen aus.</li>
- * <li>Optional die Frage für die Suche umformulieren ({@link QueryRewriter}, z. B.
- * Fachbegriffe ergänzen) und mit dem Suchtext erneut suchen. Die Schwelle wird
- * bewusst vorher mit der Originalfrage geprüft: Ergänzte Fachbegriffe würden auch
- * themenfremde Fragen ähnlicher erscheinen lassen.</li>
+ * <li>Die Frage in die Sprache des Dokuments übersetzen ({@link QueryRewriter},
+ * z. B. ein Absatz im Stil des Regelbuchs). Erkennt der Übersetzer, dass die Frage
+ * nichts mit dem Dokument zu tun hat, ist hier Schluss.</li>
+ * <li>Mit dem Suchtext suchen und die Schwelle prüfen. Ist schon der beste Treffer
+ * nicht ähnlich genug (unter {@link Settings#minScore()}), passt nichts im Dokument
+ * zur Frage – ein Sicherheitsnetz, falls der Übersetzer eine themenfremde Frage
+ * nicht erkennt.</li>
  * <li>Treffer ergänzen ({@link ContextExpander}, z. B. Geschwister-Abschnitte).</li>
  * <li>Nummerierte Quellen + <b>Original</b>frage → {@link ChatModel} → Antwort.</li>
  * </ol>
+ * In den Fällen 1 und 2 wird das Antwort-Modell gar nicht erst gefragt – das spart
+ * Kosten und schließt erfundene Antworten auf themenfremde Fragen aus.
  *
  * <p>Wie sich das Modell verhalten soll (Sprache, Quellenangaben, was bei fehlender
  * Antwort zu tun ist), steht in der Systemanweisung, die von außen kommt – so
@@ -31,8 +33,10 @@ public class AnswerGenerator {
     /**
      * Die Antwort und die Quellen (Quelle [1] = erstes Element).
      *
-     * @param modelAsked {@code false}, wenn die Antwort wegen der Schwelle ohne Sprachmodell entstand
-     * @param searchText der Text, mit dem die Quellen gesucht wurden (die Frage, ggf. umformuliert)
+     * @param modelAsked {@code false}, wenn das Antwort-Modell nicht gefragt wurde (Frage passt
+     *                   nicht zum Dokument oder bester Treffer unter der Schwelle)
+     * @param searchText der Text, mit dem gesucht wurde (die übersetzte Frage); bei einer als
+     *                   themenfremd erkannten Frage die Frage selbst
      */
     public record Answer(String text, List<SearchResult> sources, boolean modelAsked, String searchText) {
     }
@@ -92,16 +96,17 @@ public class AnswerGenerator {
     }
 
     public Answer answer(String question) {
-        // 1. Mit der Originalfrage suchen und die Schwelle prüfen
-        List<SearchResult> hits = retriever.search(question, settings.topK());
-        if (hits.isEmpty() || hits.getFirst().score() < settings.minScore()) {
-            return new Answer(settings.noAnswerText(), hits, false, question);
+        // 1. In die Sprache des Dokuments übersetzen – oder als themenfremd erkennen
+        Optional<String> rewritten = settings.rewriter().rewrite(question);
+        if (rewritten.isEmpty()) {
+            return new Answer(settings.noAnswerText(), List.of(), false, question);
         }
+        String searchText = rewritten.get();
 
-        // 2. Optional umformulieren und mit dem Suchtext erneut suchen
-        String searchText = settings.rewriter().rewrite(question);
-        if (!searchText.equals(question)) {
-            hits = retriever.search(searchText, settings.topK());
+        // 2. Suchen und die Schwelle prüfen
+        List<SearchResult> hits = retriever.search(searchText, settings.topK());
+        if (hits.isEmpty() || hits.getFirst().score() < settings.minScore()) {
+            return new Answer(settings.noAnswerText(), hits, false, searchText);
         }
 
         // 3. Treffer ergänzen, 4. Originalfrage beantworten lassen

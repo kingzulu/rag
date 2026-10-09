@@ -61,6 +61,30 @@ public final class GolfRules {
     /** Höchstens so viele Fachbegriffe ergänzt die Frage-Umformulierung (Query Expansion). */
     public static final int MAX_QUERY_TERMS = 4;
 
+    /** Übersetzung der Frage in Regelsprache: die Frage selbst, umformuliert (Variante B). */
+    public static final String REPHRASE_PROMPT = """
+            Du hilfst bei der Suche in den Offiziellen Golfregeln. Formuliere die Frage so um, wie das \
+            Regelbuch den Sachverhalt beschreiben würde: mit den Fachbegriffen des Regelbuchs, sachlich, \
+            in einem oder zwei Sätzen. Beantworte die Frage nicht.
+            Hat die Frage nichts mit den Golfregeln zu tun, antworte nur: keine
+            """;
+
+    /**
+     * Übersetzung der Frage in Regelsprache: eine hypothetische Regelstelle (Variante C, "HyDE").
+     *
+     * <p>V1 ("Hat die Frage nichts mit den Golfregeln zu tun, antworte nur: keine") wies 3 von 20
+     * Regelfragen fälschlich ab – alle Ja/Nein-Fragen ("Darf ich …?"). V2 sagt nur bei Fragen ohne
+     * jeden Golfbezug "keine"; Golffragen ohne Regelbezug fangen Schwelle und Antwort-Prompt ab.
+     */
+    public static final String HYPOTHETICAL_PASSAGE_PROMPT = """
+            Du hilfst bei der Suche in den Offiziellen Golfregeln. Schreibe einen kurzen Absatz (höchstens \
+            vier Sätze) im Stil des Regelbuchs, der die Frage beantworten könnte – mit den Fachbegriffen des \
+            Regelbuchs. Der Text dient nur der Suche nach der passenden Regelstelle und muss nicht in jedem \
+            Detail stimmen.
+            Bei jeder Frage zum Golfspiel – auch bei Ja/Nein-Fragen wie „Darf ich …?“ – schreibe den Absatz.
+            Nur wenn die Frage überhaupt nichts mit Golf zu tun hat, antworte nur: keine
+            """;
+
     private static final boolean SORT_BY_POSITION = true;
     private static final int PRINTED_PAGE_OFFSET = -2;
     private static final String[] HEADER_PATTERNS = {

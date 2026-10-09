@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
@@ -36,7 +37,7 @@ class TermQueryRewriterTest {
     void appendsTermsFromVocabularyToQuestion() {
         FixedChatModel chat = new FixedChatModel("Tierloch, Ungewöhnliche Platzverhältnisse");
 
-        String rewritten = new TermQueryRewriter(chat, VOCABULARY, 5).rewrite("Ball im Kaninchenloch?");
+        String rewritten = new TermQueryRewriter(chat, VOCABULARY, 5).rewrite("Ball im Kaninchenloch?").orElseThrow();
 
         assertEquals("Ball im Kaninchenloch? (Tierloch, Ungewöhnliche Platzverhältnisse)", rewritten);
     }
@@ -75,7 +76,8 @@ class TermQueryRewriterTest {
     void leavesQuestionUnchangedWhenNoTermFits() {
         FixedChatModel chat = new FixedChatModel("keine");
 
-        assertEquals("Wie koche ich Spaghetti?",
+        // Keine Begriffe heißt hier nur "nichts zu ergänzen" – gesucht wird trotzdem, mit der Frage selbst.
+        assertEquals(Optional.of("Wie koche ich Spaghetti?"),
                 new TermQueryRewriter(chat, VOCABULARY, 5).rewrite("Wie koche ich Spaghetti?"));
     }
 }

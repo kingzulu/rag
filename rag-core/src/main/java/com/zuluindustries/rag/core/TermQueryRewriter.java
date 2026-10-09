@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Ergänzt eine Frage um Fachbegriffe des Dokuments ("Query Expansion"): Ein
@@ -50,10 +51,11 @@ public class TermQueryRewriter implements QueryRewriter {
         this.maxTerms = maxTerms;
     }
 
+    /** Findet das Modell keine passenden Begriffe, wird mit der unveränderten Frage gesucht. */
     @Override
-    public String rewrite(String question) {
+    public Optional<String> rewrite(String question) {
         List<String> terms = terms(question);
-        return terms.isEmpty() ? question : question + " (" + String.join(", ", terms) + ")";
+        return Optional.of(terms.isEmpty() ? question : question + " (" + String.join(", ", terms) + ")");
     }
 
     /** Die Begriffe, die das Modell für die Frage auswählt – nur solche aus der Liste. */
