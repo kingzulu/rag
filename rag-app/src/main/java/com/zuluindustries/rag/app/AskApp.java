@@ -61,6 +61,14 @@ public class AskApp {
             System.out.println();
         }
         System.out.println(answer.text());
+        if (!answer.problems().isEmpty()) {
+            System.out.println();
+            System.out.println("⚠ Achtung, nicht durch die Quellen belegt – bitte in den Quellen nachprüfen:");
+            answer.problems().forEach(problem -> System.out.println("  - " + problem));
+        }
+        if (answer.corrected()) {
+            System.out.println("(Antwort wurde nachgebessert; erste Fassung: " + answer.firstAttemptProblems() + ")");
+        }
         if (!answer.modelAsked()) {
             if (answer.sources().isEmpty()) {
                 System.out.println("(Sprachmodell nicht gefragt: Frage passt nicht zu den Golfregeln)");

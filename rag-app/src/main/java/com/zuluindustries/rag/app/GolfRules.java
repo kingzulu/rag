@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import com.zuluindustries.rag.core.Chunker;
 import com.zuluindustries.rag.core.Document;
@@ -140,6 +141,34 @@ public final class GolfRules {
      * (laut Systemanweisung) oder direkt, wenn kein Suchtreffer die Schwelle erreicht.
      */
     public static final String NO_ANSWER_TEXT = "Dazu finde ich in den Golfregeln keine Antwort.";
+
+    /** Ein Regelverweis in einer Antwort, z. B. "Regel 17.1d(1)"; Gruppe 1 = "17.1d" (für den CitationChecker). */
+    public static final Pattern RULE_REFERENCE = Pattern.compile("Regel\\s+(\\d+(?:\\.\\d+[a-z]?)?)(?:\\(\\d+\\))*");
+
+    /**
+     * Anzeichen für die Regeln vor 2019, die das Sprachmodell aus dem Training kennt:
+     * "Wasserhindernis", "fallen lassen" (heute: droppen) und Nummern wie "Regel 17-1".
+     * Keiner dieser Begriffe kommt im Regelbuch 2023 vor (geprüft 9.10.2026); "Hindernis"
+     * allein schon, darum fehlt es hier, ebenso Bereiche wie "Regeln 1-20".
+     */
+    public static final Pattern OUTDATED_TERMS = Pattern.compile(
+            "Wasserhindernis\\w*|fallen ?(?:ge)?lass\\w*|Regel \\d+-\\d+", Pattern.CASE_INSENSITIVE);
+
+    /** So wird ein Fund aus {@link #OUTDATED_TERMS} gemeldet – auch dem Modell bei der Nachbesserung. */
+    public static final String OUTDATED_TERM_LABEL = "Begriff aus den Golfregeln vor 2019, steht nicht in den Quellen";
+
+    /**
+     * Nachricht an das Modell, wenn die Prüfung seiner Antwort etwas findet ({@code %s} = Liste der
+     * Probleme). Es soll die Antwort einmal neu schreiben – im selben Gespräch, mit denselben Quellen.
+     */
+    public static final String CORRECTION_PROMPT = """
+            Deine Antwort enthält Angaben, die nicht in den Quellen stehen:
+            %s
+
+            Schreibe die Antwort neu und verwende nur, was in den nummerierten Quellen steht. Lass die \
+            genannten Angaben weg oder ersetze sie durch die passende Stelle aus den Quellen. Gib nur die \
+            neue Antwort aus, ohne Hinweis auf die Korrektur.
+            """;
 
     /**
      * Verhaltensregeln für das Sprachmodell, wenn es Fragen zu den Golfregeln beantwortet (V5).

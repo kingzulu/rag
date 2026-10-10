@@ -154,6 +154,82 @@ class AnswerGeneratorTest {
         assertTrue(chat.received.get(1).content().endsWith("Frage: Mein Ball liegt im Sand neben dem Grün."));
     }
 
+    /** Chat-Attrappe: liefert nacheinander die vorgegebenen Antworten und merkt sich jedes Gespräch. */
+    private static class ScriptedChatModel implements ChatModel {
+
+        final List<List<ChatMessage>> calls = new ArrayList<>();
+        private final List<String> replies;
+
+        ScriptedChatModel(String... replies) {
+            this.replies = List.of(replies);
+        }
+
+        @Override
+        public String chat(List<ChatMessage> messages) {
+            calls.add(List.copyOf(messages));
+            return replies.get(calls.size() - 1);
+        }
+    }
+
+    /** Generator mit einer Prüfung, die jede Antwort mit "7.3" beanstandet. */
+    private static AnswerGenerator generatorWithCheck(ChatModel chat) {
+        Fakes.WordCountEmbeddingModel embeddings = new Fakes.WordCountEmbeddingModel();
+        Fakes.MapVectorStore store = new Fakes.MapVectorStore();
+        new Indexer(embeddings, store).index(List.of(new Document("bunker", "Regel 12.2b Bunker")));
+        AnswerCheck no73 = (answer, sources) -> answer.contains("7.3") ? List.of("7.3 steht in keiner Quelle")
+                : List.of();
+        return new AnswerGenerator(new Retriever(embeddings, store, ""), chat,
+                AnswerGenerator.Settings.of("System", 1).withCheck(no73, "Bitte korrigieren:\n%s"));
+    }
+
+    @Test
+    void asksOnceWhenCheckFindsNothing() {
+        ScriptedChatModel chat = new ScriptedChatModel("Regel 12.2b [1]");
+
+        AnswerGenerator.Answer answer = generatorWithCheck(chat).answer("Bunker?");
+
+        assertEquals("Regel 12.2b [1]", answer.text());
+        assertEquals(1, chat.calls.size());
+        assertFalse(answer.corrected());
+        assertTrue(answer.problems().isEmpty());
+    }
+
+    @Test
+    void asksAgainWithProblemsInSameConversation() {
+        ScriptedChatModel chat = new ScriptedChatModel("Regel 7.3 [1]", "Regel 12.2b [1]");
+
+        AnswerGenerator.Answer answer = generatorWithCheck(chat).answer("Bunker?");
+
+        assertEquals("Regel 12.2b [1]", answer.text());
+        assertTrue(answer.corrected());
+        assertEquals(List.of("7.3 steht in keiner Quelle"), answer.firstAttemptProblems());
+        assertTrue(answer.problems().isEmpty());
+
+        List<ChatMessage> second = chat.calls.get(1);
+        assertEquals(4, second.size());   // System, Quellen + Frage, erste Antwort, Korrektur
+        assertEquals(new ChatMessage(Role.ASSISTANT, "Regel 7.3 [1]"), second.get(2));
+        assertEquals(new ChatMessage(Role.USER, "Bitte korrigieren:\n- 7.3 steht in keiner Quelle"), second.get(3));
+    }
+
+    @Test
+    void deliversSecondAnswerWithProblemsWhenCorrectionFails() {
+        ScriptedChatModel chat = new ScriptedChatModel("Regel 7.3 [1]", "Immer noch Regel 7.3 [1]");
+
+        AnswerGenerator.Answer answer = generatorWithCheck(chat).answer("Bunker?");
+
+        assertEquals("Immer noch Regel 7.3 [1]", answer.text());
+        assertEquals(List.of("7.3 steht in keiner Quelle"), answer.problems());
+        assertEquals(2, chat.calls.size(), "Nur ein Nachbesserungsversuch");
+    }
+
+    @Test
+    void collectsProblemsOfAllChecks() {
+        AnswerCheck first = (answer, sources) -> List.of("A");
+        AnswerCheck second = (answer, sources) -> List.of("B", "C");
+
+        assertEquals(List.of("A", "B", "C"), AnswerCheck.all(first, AnswerCheck.NONE, second).problems("x", List.of()));
+    }
+
     @Test
     void chainsExpandersWithAndThen() {
         Document first = new Document("eins", "Eins");

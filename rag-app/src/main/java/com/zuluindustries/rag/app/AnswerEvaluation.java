@@ -1,6 +1,7 @@
 package com.zuluindustries.rag.app;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 import com.zuluindustries.rag.core.AnswerGenerator;
@@ -17,6 +18,11 @@ import com.zuluindustries.rag.store.memory.InMemoryVectorStore;
  * <p>Antworten mit Temperatur 0, damit Unterschiede möglichst von der Änderung
  * kommen und nicht vom Zufall. Für einen direkten Vergleich zweier Varianten
  * eine zweite Variante ergänzen, die sich in genau einer Sache unterscheidet.
+ *
+ * <p>Der Assistent prüft jede Antwort selbst (Regelnummern in den Quellen, keine
+ * Begriffe der Regeln vor 2019, siehe {@link GolfAssistant}) und bessert einmal
+ * nach. Am Ende steht, wie oft nachgebessert wurde und was danach noch auffiel –
+ * die Zahlen zum Vergleichen zweier Prompt-Fassungen.
  */
 public class AnswerEvaluation {
 
@@ -34,13 +40,16 @@ public class AnswerEvaluation {
             "Ich habe ins wasser geschlagen, es ist gelb markiert. wie verhalte ich mich?",      // umgangssprachlich
             "ich habe abgeschlagen, weiß aber nicht, ob ich meinen ball finden werde. was mache ich",
             "Wie verbessere ich meinen Abschlag?",                                  // Grenzfall (Technik)
-            "Was kostet eine Runde Golf auf einem Platz in Bayern?");               // Grenzfall
+            "Was kostet eine Runde Golf auf einem Platz in Bayern?",                // Grenzfall
+            "der ball landet tief im gebüsch. darf ich am gebüschrand droppen?");  // Regel anwenden (19.2c)
 
     public static void main(String[] args) throws IOException {
         InMemoryVectorStore store = SearchIndex.loadExisting();
         AnswerGenerator assistant = GolfAssistant.create(store, Scaleway.chatModel(0.0));
 
         int failures = 0;
+        List<String> corrected = new ArrayList<>();
+        List<String> remaining = new ArrayList<>();
         for (int q = 0; q < QUESTIONS.size(); q++) {
             String question = QUESTIONS.get(q);
             System.out.println("=".repeat(100));
@@ -48,14 +57,25 @@ public class AnswerEvaluation {
             System.out.println();
             // Ein Fehler (z. B. Zeitüberschreitung beim Anbieter) soll nicht die ganze Auswertung abbrechen.
             try {
-                printAnswer(question, assistant.answer(question));
+                AnswerGenerator.Answer answer = assistant.answer(question);
+                printAnswer(question, answer);
+                String label = "F" + (q + 1);
+                if (answer.corrected()) {
+                    corrected.add(label);
+                }
+                answer.problems().forEach(problem -> remaining.add(label + ": " + problem));
             } catch (RuntimeException e) {
                 failures++;
                 System.out.println("FEHLER: " + e.getMessage());
             }
         }
+
+        System.out.println("=".repeat(100));
+        System.out.printf("Nachgebessert: %d Antwort(en)%s%n", corrected.size(),
+                corrected.isEmpty() ? "" : " – " + String.join(", ", corrected));
+        System.out.printf("Danach noch nicht belegt: %d%s%n", remaining.size(),
+                remaining.isEmpty() ? "" : " – " + String.join("; ", remaining));
         if (failures > 0) {
-            System.out.println();
             System.out.println(failures + " Antwort(en) fehlgeschlagen – siehe FEHLER oben.");
         }
     }
@@ -70,6 +90,13 @@ public class AnswerEvaluation {
             System.out.println();
         }
         System.out.println(answer.text());
+        if (answer.corrected()) {
+            System.out.println();
+            System.out.println("NACHGEBESSERT – erste Fassung hatte: " + answer.firstAttemptProblems());
+        }
+        if (!answer.problems().isEmpty()) {
+            System.out.println("NOCH NICHT BELEGT: " + answer.problems());
+        }
         if (!answer.modelAsked()) {
             System.out.println(answer.sources().isEmpty()
                     ? "(Sprachmodell nicht gefragt – Frage passt nicht zu den Golfregeln)"
