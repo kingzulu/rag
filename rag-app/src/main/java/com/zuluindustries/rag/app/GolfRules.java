@@ -160,14 +160,23 @@ public final class GolfRules {
     /**
      * Nachricht an das Modell, wenn die Prüfung seiner Antwort etwas findet ({@code %s} = Liste der
      * Probleme). Es soll die Antwort einmal neu schreiben – im selben Gespräch, mit denselben Quellen.
+     *
+     * <p>V2. V1 erlaubte, die Angaben "wegzulassen oder durch die passende Stelle aus den Quellen
+     * zu ersetzen" – das Modell ersetzte aus dem Gedächtnis (Messung 10.10.2026, Frage 8:
+     * aus "16.1, 17.1d, Wasserhindernis" wurde "19.3, 17.1e, Hindernis"). V2 stellt das Weglassen
+     * voran und erlaubt Neues nur mit Quellennummer – das prüft der CitationChecker wieder.
+     * Messung V2 (4 Läufe): 3 von 3 Nachbesserungen sauber, das Unbelegte wurde weggelassen.
      */
     public static final String CORRECTION_PROMPT = """
             Deine Antwort enthält Angaben, die nicht in den Quellen stehen:
             %s
 
-            Schreibe die Antwort neu und verwende nur, was in den nummerierten Quellen steht. Lass die \
-            genannten Angaben weg oder ersetze sie durch die passende Stelle aus den Quellen. Gib nur die \
-            neue Antwort aus, ohne Hinweis auf die Korrektur.
+            Schreibe die Antwort neu:
+            - Lass diese Angaben weg. Setze an ihre Stelle keine anderen Regelnummern oder Begriffe, \
+            die nicht in den Quellen stehen.
+            - Neu aufnehmen darfst du nur, was in einer Quelle steht – mit ihrer Nummer, z. B. [3].
+            - Behalte alles andere, was in den Quellen belegt ist.
+            - Gib nur die neue Antwort aus, ohne Hinweis auf die Korrektur.
             """;
 
     /**
@@ -188,6 +197,11 @@ public final class GolfRules {
      * Schwankung zwischen zwei Läufen derselben Fassung war so groß wie der
      * Unterschied zwischen V3 und V5; kleine Prompt-Änderungen lassen sich mit
      * einem einzelnen Lauf nicht sicher bewerten.
+     *
+     * <p>V6 (10.10.2026) ergänzte "Wende die Regeln aus den Quellen auf den geschilderten
+     * Fall an …", weil V5 "darf ich am Gebüschrand droppen?" verweigert, obwohl 19.2c unter
+     * den Quellen ist. Ohne Wirkung (7 von 7 Läufen mit V5 und V6 verweigert), nicht mehr
+     * Fehler, aber auch kein Nutzen – verworfen. Der Auslöser der Verweigerung ist noch offen.
      */
     public static final String SYSTEM_PROMPT = """
             Du beantwortest Fragen zu den Offiziellen Golfregeln (gültig ab Januar 2023).
