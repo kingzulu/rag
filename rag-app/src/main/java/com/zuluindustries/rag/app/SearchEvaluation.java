@@ -16,7 +16,6 @@ import com.zuluindustries.rag.core.EmbeddingModel;
 import com.zuluindustries.rag.core.QueryRewriter;
 import com.zuluindustries.rag.core.Retriever;
 import com.zuluindustries.rag.core.SearchResult;
-import com.zuluindustries.rag.core.TermQueryRewriter;
 import com.zuluindustries.rag.core.chunk.ChunkAssembler;
 import com.zuluindustries.rag.store.memory.InMemoryVectorStore;
 
@@ -26,11 +25,14 @@ import com.zuluindustries.rag.store.memory.InMemoryVectorStore;
  * Suche in Regelsprache übersetzt wird:
  * <ul>
  * <li><b>Orig.</b> – die Frage unverändert (mit der Anweisung des Embedding-Modells)</li>
- * <li><b>A</b> – Frage + Fachbegriffe aus der Begriffsliste</li>
- * <li><b>B</b> – die Frage, vom Sprachmodell in Regelsprache umformuliert</li>
- * <li><b>C</b> – ein hypothetischer Absatz im Stil des Regelbuchs ("HyDE"); weil das
- * ein Text wie die gespeicherten Chunks ist und keine Frage, ohne Anweisung eingebettet</li>
+ * <li><b>C</b> – ein hypothetischer Absatz im Stil des Regelbuchs ("HyDE", V2 – im Einsatz);
+ * weil das ein Text wie die gespeicherten Chunks ist und keine Frage, ohne Anweisung
+ * eingebettet</li>
  * </ul>
+ *
+ * <p>Frühere Varianten wurden gemessen und verworfen: A (Frage + Fachbegriffe) und
+ * B (Frage umformuliert) am 9.10.2026 – siehe Git-Historie dieser Datei; HyDE ohne
+ * Regelnummern am 11.10.2026 – Ergebnis bei {@link GolfRules#HYPOTHETICAL_PASSAGE_PROMPT}.
  *
  * <p>Kennzahlen: Treffer@1 / Treffer@5 (richtige Quelle auf Platz 1 / unter den
  * ersten fünf) und der beste Ähnlichkeitswert von Regelfragen und themenfremden
@@ -79,7 +81,10 @@ public class SearchEvaluation {
             new TestQuestion("ich habe abgeschlagen, weiß aber nicht, ob ich meinen ball finden werde. was mache ich",
                     List.of("18.3", "Provisorischer Ball")),
             new TestQuestion("Mein Ball ist im Teich gelandet, da stehen rote Pfähle. Was jetzt?", List.of("17.1")),
-            new TestQuestion("Ball ist weg, ich find ihn nicht mehr. Und nun?", List.of("18.2", "Verloren")));
+            new TestQuestion("Ball ist weg, ich find ihn nicht mehr. Und nun?", List.of("18.2", "Verloren")),
+            new TestQuestion("der ball landet tief im gebüsch. darf ich am gebüschrand droppen?", List.of("19.2c")),
+            new TestQuestion("Ich berühre den BAll beim Abschlag nach dem Aufteen. Ist dies ein Schlag?",
+                    List.of("Schlag", "6.2b")));
 
     private static final List<TestQuestion> TEST_QUESTIONS =
             Stream.concat(RULE_QUESTIONS.stream(), COLLOQUIAL_QUESTIONS.stream()).toList();
@@ -129,12 +134,9 @@ public class SearchEvaluation {
         List<String> allQuestions = new ArrayList<>(TEST_QUESTIONS.stream().map(TestQuestion::question).toList());
         allQuestions.addAll(OFF_TOPIC_QUESTIONS);
 
-        System.out.println("Übersetze " + allQuestions.size() + " Fragen mit drei Varianten (dauert etwa eine Minute) …");
+        System.out.println("Übersetze " + allQuestions.size() + " Fragen (dauert etwa eine halbe Minute) …");
         List<Variant> variants = List.of(
                 variant("Orig.", QueryRewriter.NONE, instruct, allQuestions),
-                variant("A", new TermQueryRewriter(chat, GolfRules.definitionTerms(store.documents()),
-                        GolfRules.MAX_QUERY_TERMS), instruct, allQuestions),
-                variant("B", new ChatQueryRewriter(chat, GolfRules.REPHRASE_PROMPT), instruct, allQuestions),
                 variant("C", new ChatQueryRewriter(chat, GolfRules.HYPOTHETICAL_PASSAGE_PROMPT), plain, allQuestions));
 
         printRanks(variants);

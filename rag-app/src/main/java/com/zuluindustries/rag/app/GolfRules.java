@@ -76,6 +76,13 @@ public final class GolfRules {
      * <p>V1 ("Hat die Frage nichts mit den Golfregeln zu tun, antworte nur: keine") wies 3 von 20
      * Regelfragen fälschlich ab – alle Ja/Nein-Fragen ("Darf ich …?"). V2 sagt nur bei Fragen ohne
      * jeden Golfbezug "keine"; Golffragen ohne Regelbezug fangen Schwelle und Antwort-Prompt ab.
+     *
+     * <p>V3 ohne Regelnummern getestet (11.10.2026, SearchEvaluation): Dieselben Absätze mit
+     * per Code entfernten Nummern fanden genau gleich gut (Treffer@1 17/22, @5 21/22) – die
+     * Nummern aus dem Gedächtnis verbiegen die Suche nicht. Das Verbot im Prompt brachte
+     * Treffer@1 14/22 und ließ "Wie verbessere ich meinen Abschlag?" durch den Filter –
+     * verworfen. Schwankt eine Frage stark (Kaninchenloch: Platz 3, 5, 10), liegt es am
+     * Inhalt des Absatzes.
      */
     public static final String HYPOTHETICAL_PASSAGE_PROMPT = """
             Du hilfst bei der Suche in den Offiziellen Golfregeln. Schreibe einen kurzen Absatz (höchstens \
