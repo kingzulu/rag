@@ -96,6 +96,18 @@ class OpenAiCompatibleChatModelTest {
     }
 
     @Test
+    void canUseOtherTokenLimitNameAndModelDefaultTemperature() {
+        OpenAiCompatibleChatModel newerModel = new OpenAiCompatibleChatModel(baseUrl, API_KEY, "gpt-test", null,
+                4000, OpenAiCompatibleChatModel.MAX_COMPLETION_TOKENS, Duration.ofMillis(1));
+
+        newerModel.chat(List.of(ChatMessage.user("Hallo")));
+
+        assertEquals(4000, receivedBody.path("max_completion_tokens").asInt());
+        assertTrue(receivedBody.path("max_tokens").isMissingNode(), "Altes Feld darf nicht mitgeschickt werden");
+        assertTrue(receivedBody.path("temperature").isMissingNode(), "Ohne Angabe gilt die Standard-Temperatur");
+    }
+
+    @Test
     void marksTruncatedAnswer() {
         finishReason = "length";
 

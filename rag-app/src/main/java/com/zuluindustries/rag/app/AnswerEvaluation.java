@@ -15,14 +15,17 @@ import com.zuluindustries.rag.store.memory.InMemoryVectorStore;
  * ({@link GolfAssistant}) und gibt Antworten und Quellen aus – zum Prüfen nach
  * jeder Änderung an Prompt oder Suche. Bewertet wird von Hand.
  *
- * <p>Antworten mit Temperatur 0, damit Unterschiede möglichst von der Änderung
- * kommen und nicht vom Zufall. Für einen direkten Vergleich zweier Varianten
+ * <p>Antworten mit Temperatur 0 (bei Scaleway), damit Unterschiede möglichst von
+ * der Änderung kommen und nicht vom Zufall. Für einen direkten Vergleich zweier Varianten
  * eine zweite Variante ergänzen, die sich in genau einer Sache unterscheidet.
  *
  * <p>Der Assistent prüft jede Antwort selbst (Regelnummern in den Quellen, keine
  * Begriffe der Regeln vor 2019, siehe {@link GolfAssistant}) und bessert einmal
  * nach. Am Ende steht, wie oft nachgebessert wurde und was danach noch auffiel –
  * die Zahlen zum Vergleichen zweier Prompt-Fassungen.
+ *
+ * <p>Programm-Argument (optional): welches Modell antwortet – "scaleway" (Standard)
+ * oder "openai", siehe {@link ChatProviders}.
  */
 public class AnswerEvaluation {
 
@@ -41,11 +44,14 @@ public class AnswerEvaluation {
             "ich habe abgeschlagen, weiß aber nicht, ob ich meinen ball finden werde. was mache ich",
             "Wie verbessere ich meinen Abschlag?",                                  // Grenzfall (Technik)
             "Was kostet eine Runde Golf auf einem Platz in Bayern?",                // Grenzfall
-            "der ball landet tief im gebüsch. darf ich am gebüschrand droppen?");  // Regel anwenden (19.2c)
+            "der ball landet tief im gebüsch. darf ich am gebüschrand droppen?",   // Regel anwenden (19.2c)
+            "Ich berühre den BAll beim Abschlag nach dem Aufteen. Ist dies ein Schlag?");  // Definition Schlag, 6.2b
 
     public static void main(String[] args) throws IOException {
         InMemoryVectorStore store = SearchIndex.loadExisting();
-        AnswerGenerator assistant = GolfAssistant.create(store, Scaleway.chatModel(0.0));
+        ChatProviders.Choice answerModel = ChatProviders.forEvaluation(args.length > 0 ? args[0] : "scaleway");
+        AnswerGenerator assistant = GolfAssistant.create(store, answerModel.model());
+        System.out.println("Antwortmodell: " + answerModel.description());
 
         int failures = 0;
         List<String> corrected = new ArrayList<>();

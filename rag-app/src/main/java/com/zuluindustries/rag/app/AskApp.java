@@ -3,6 +3,7 @@ package com.zuluindustries.rag.app;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.Arrays;
 import java.util.List;
 
 import com.zuluindustries.rag.core.AnswerGenerator;
@@ -15,20 +16,29 @@ import com.zuluindustries.rag.core.chunk.ChunkAssembler;
  * bekommen. In Eclipse in der Console tippen; eine leere Zeile beendet das
  * Programm. Mit Programm-Argument wird nur diese eine Frage beantwortet.
  *
+ * <p>Welches Modell antwortet, wählt ein vorangestelltes Argument {@code --openai}
+ * oder {@code --scaleway}; ohne gilt {@link ChatProviders#DEFAULT_FOR_ANSWERS}.
+ *
  * <p>Wie der Assistent arbeitet, steht in {@link GolfAssistant}: Die Frage wird
  * zuerst in eine hypothetische Regelstelle übersetzt, damit gesucht und die
  * Antwort aus den gefundenen Quellen formuliert.
  *
  * <p>Braucht den Suchindex (zuerst IndexApp ausführen) und die Umgebungsvariable
- * SCW_SECRET_KEY.
+ * SCW_SECRET_KEY (Übersetzung und Suche), für OpenAI zusätzlich OPENAI_API_KEY.
  */
 public class AskApp {
 
     private static final int MAX_SEARCH_TEXT_SHOWN = 300;
 
     public static void main(String[] args) throws IOException {
-        AnswerGenerator generator = GolfAssistant.create(SearchIndex.loadExisting(), Scaleway.chatModel());
-        System.out.println("Golfregel-Assistent (" + Scaleway.CHAT_MODEL + ")");
+        String provider = ChatProviders.DEFAULT_FOR_ANSWERS;
+        if (args.length > 0 && args[0].startsWith("--")) {
+            provider = args[0].substring(2);
+            args = Arrays.copyOfRange(args, 1, args.length);
+        }
+        ChatProviders.Choice answerModel = ChatProviders.forAnswers(provider);
+        AnswerGenerator generator = GolfAssistant.create(SearchIndex.loadExisting(), answerModel.model());
+        System.out.println("Golfregel-Assistent (" + answerModel.description() + ")");
 
         if (args.length > 0) {
             ask(generator, String.join(" ", args));
