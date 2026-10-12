@@ -8,12 +8,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 import com.zuluindustries.rag.core.ChatModel;
 import com.zuluindustries.rag.core.ChatQueryRewriter;
+import com.zuluindustries.rag.core.Document;
 import com.zuluindustries.rag.core.EmbeddingModel;
+import com.zuluindustries.rag.core.FusionSearcher;
 import com.zuluindustries.rag.core.QueryRewriter;
+import com.zuluindustries.rag.core.RankFusion;
 import com.zuluindustries.rag.core.Retriever;
 import com.zuluindustries.rag.core.SearchResult;
 import com.zuluindustries.rag.core.chunk.ChunkAssembler;
@@ -28,6 +32,9 @@ import com.zuluindustries.rag.store.memory.InMemoryVectorStore;
  * <li><b>C</b> – ein hypothetischer Absatz im Stil des Regelbuchs ("HyDE", V2 – im Einsatz);
  * weil das ein Text wie die gespeicherten Chunks ist und keine Frage, ohne Anweisung
  * eingebettet</li>
+ * <li><b>F</b> – Orig. und C zusammengeführt ({@link FusionSearcher}, RRF – im Einsatz);
+ * angezeigt wird die Ähnlichkeit zum HyDE-Absatz, damit die Werte mit C vergleichbar
+ * bleiben</li>
  * </ul>
  *
  * <p>Frühere Varianten wurden gemessen und verworfen: A (Frage + Fachbegriffe) und
@@ -102,16 +109,28 @@ public class SearchEvaluation {
             "Wie verbessere ich meinen Abschlag?",
             "Was kostet eine Runde Golf auf einem Platz in Bayern?");
 
+    /** Wie eine Variante zu einer Frage sucht (Filter: nur unter diesen Dokumenten). */
+    @FunctionalInterface
+    private interface VariantSearch {
+        List<SearchResult> search(String question, int topK, Predicate<Document> filter);
+    }
+
     /**
      * Eine Art, zu einer Frage zu suchen. Suchtexte und deren Vektoren werden
      * vorab einmal berechnet – jede Übersetzung und jedes Einbetten kostet einen
      * Aufruf beim Anbieter, die Suche selbst danach nichts mehr.
+     *
+     * @param searchTexts womit gesucht wird, je Frage; leer bei zusammengeführten Varianten
      */
-    private record Variant(String name, Retriever retriever, Map<String, String> searchTexts,
-            Map<String, float[]> vectors, Set<String> rejected) {
+    private record Variant(String name, Map<String, String> searchTexts, Map<String, float[]> vectors,
+            Set<String> rejected, VariantSearch searcher) {
 
         List<SearchResult> search(String question, int topK) {
-            return retriever.search(vectors.get(question), topK, document -> true);
+            return search(question, topK, document -> true);
+        }
+
+        List<SearchResult> search(String question, int topK, Predicate<Document> filter) {
+            return searcher.search(question, topK, filter);
         }
 
         double bestScore(String question) {
@@ -135,9 +154,11 @@ public class SearchEvaluation {
         allQuestions.addAll(OFF_TOPIC_QUESTIONS);
 
         System.out.println("Übersetze " + allQuestions.size() + " Fragen (dauert etwa eine halbe Minute) …");
-        List<Variant> variants = List.of(
-                variant("Orig.", QueryRewriter.NONE, instruct, allQuestions),
-                variant("C", new ChatQueryRewriter(chat, GolfRules.HYPOTHETICAL_PASSAGE_PROMPT), plain, allQuestions));
+        Variant original = variant("Orig.", QueryRewriter.NONE, instruct, allQuestions);
+        Variant passage = variant("C", new ChatQueryRewriter(chat, GolfRules.HYPOTHETICAL_PASSAGE_PROMPT), plain,
+                allQuestions);
+        FusionSearcher fusion = new FusionSearcher(instruct, plain, GolfRules.FUSION_CANDIDATES, RankFusion.DEFAULT_K);
+        List<Variant> variants = List.of(original, passage, fused("F", fusion, original, passage));
 
         printRanks(variants);
         printSeparation(variants);
@@ -157,7 +178,18 @@ public class SearchEvaluation {
             searchTexts.put(question, searchText);
             vectors.put(question, retriever.embed(searchText));
         }
-        return new Variant(name, retriever, searchTexts, vectors, rejected);
+        return new Variant(name, searchTexts, vectors, rejected,
+                (question, topK, filter) -> retriever.search(vectors.get(question), topK, filter));
+    }
+
+    /**
+     * Sucht wie der Assistent: Frage ({@code question}) und Suchtext ({@code text}) mit dem
+     * {@link FusionSearcher} zusammengeführt – mit den schon berechneten Vektoren, also
+     * ohne weitere Aufrufe.
+     */
+    private static Variant fused(String name, FusionSearcher fusion, Variant question, Variant text) {
+        return new Variant(name, Map.of(), Map.of(), text.rejected(), (q, topK, filter) ->
+                fusion.search(question.vectors().get(q), text.vectors().get(q), topK, filter));
     }
 
     /** Platz der richtigen Quelle je Frage und Variante, dazu Treffer@1 / Treffer@5. */
@@ -234,6 +266,9 @@ public class SearchEvaluation {
             System.out.println();
             System.out.println(test.question());
             for (Variant variant : variants.subList(1, variants.size())) {
+                if (!variant.searchTexts().containsKey(test.question())) {
+                    continue;   // zusammengeführte Variante: kein eigener Suchtext
+                }
                 String text = variant.searchTexts().get(test.question()).replace('\n', ' ');
                 System.out.printf("  %s: %s%n", variant.name(), variant.rejected(test.question()) ? "(als themenfremd abgewiesen)" : text);
             }

@@ -84,7 +84,7 @@ public class AskApp {
                 System.out.println("(Sprachmodell nicht gefragt: Frage passt nicht zu den Golfregeln)");
             } else {
                 System.out.printf("(Sprachmodell nicht gefragt: bester Treffer %.3f liegt unter der Schwelle %.2f)%n",
-                        answer.sources().getFirst().score(), Scaleway.MIN_ANSWER_SCORE);
+                        AnswerGenerator.bestScore(answer.sources()), Scaleway.MIN_ANSWER_SCORE);
             }
         }
 

@@ -5,7 +5,10 @@ import com.zuluindustries.rag.core.AnswerGenerator;
 import com.zuluindustries.rag.core.ChatModel;
 import com.zuluindustries.rag.core.ChatQueryRewriter;
 import com.zuluindustries.rag.core.CitationChecker;
+import com.zuluindustries.rag.core.EmbeddingModel;
 import com.zuluindustries.rag.core.ForbiddenTermCheck;
+import com.zuluindustries.rag.core.FusionSearcher;
+import com.zuluindustries.rag.core.RankFusion;
 import com.zuluindustries.rag.core.Retriever;
 import com.zuluindustries.rag.core.chunk.SiblingExpander;
 import com.zuluindustries.rag.store.memory.InMemoryVectorStore;
@@ -16,8 +19,10 @@ import com.zuluindustries.rag.store.memory.InMemoryVectorStore;
  * <ol>
  * <li>Frage in eine hypothetische Regelstelle übersetzen ("HyDE"); erkennt das
  * Modell eine themenfremde Frage, ist Schluss.</li>
- * <li>Mit dem Absatz suchen – <b>ohne</b> Anfrage-Anweisung, weil er wie die
- * gespeicherten Chunks ein Text ist und keine Frage.</li>
+ * <li>Zweimal suchen und zusammenführen ({@link FusionSearcher}, RRF): mit dem
+ * Absatz – <b>ohne</b> Anfrage-Anweisung, weil er wie die gespeicherten Chunks ein
+ * Text ist und keine Frage – und mit der Originalfrage, mit Anweisung. So hängt
+ * die Suche nicht allein an einem erfundenen Absatz.</li>
  * <li>Schwelle als Sicherheitsnetz, Geschwister-Abschnitte ergänzen.</li>
  * <li>Die Originalfrage aus den Quellen beantworten.</li>
  * <li>Die Antwort prüfen: Jede Regelnummer muss in einer Quelle stehen, kein Begriff
@@ -35,7 +40,11 @@ final class GolfAssistant {
      *                    immer ein eigenes mit Temperatur 0)
      */
     static AnswerGenerator create(InMemoryVectorStore store, ChatModel answerModel) {
-        Retriever passageRetriever = new Retriever(Scaleway.embeddingModel(), store, "");
+        EmbeddingModel embeddings = Scaleway.embeddingModel();
+        FusionSearcher questionAndPassage = new FusionSearcher(
+                new Retriever(embeddings, store, Scaleway.QUERY_INSTRUCTION),   // Frage: mit Anweisung
+                new Retriever(embeddings, store, ""),                          // Absatz: wie die Chunks
+                GolfRules.FUSION_CANDIDATES, RankFusion.DEFAULT_K);
         ChatQueryRewriter hypotheticalPassage = new ChatQueryRewriter(Scaleway.chatModel(0.0),
                 GolfRules.HYPOTHETICAL_PASSAGE_PROMPT);
         SiblingExpander siblings = new SiblingExpander(store.documents(), GolfRules.MAX_CONTEXT_CHUNKS,
@@ -49,6 +58,6 @@ final class GolfAssistant {
                 .withMinScore(Scaleway.MIN_ANSWER_SCORE, GolfRules.NO_ANSWER_TEXT)
                 .withExpander(siblings)
                 .withCheck(fromSourcesOnly, GolfRules.CORRECTION_PROMPT);
-        return new AnswerGenerator(passageRetriever, answerModel, settings);
+        return new AnswerGenerator(questionAndPassage, answerModel, settings);
     }
 }

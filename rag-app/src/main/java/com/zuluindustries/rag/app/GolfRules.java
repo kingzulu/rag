@@ -41,6 +41,13 @@ public final class GolfRules {
 
     /** So viele Treffer liefert die Suche für eine Antwort. */
     public static final int ANSWER_TOP_K = 5;
+
+    /**
+     * So viele Treffer jeder Einzelsuche (Frage und HyDE-Absatz) gehen in die Zusammenführung.
+     * Messung 12.10.2026 (SearchEvaluation, 2 Läufe): zusammengeführt Treffer@1 18/22 statt 17/22,
+     * Treffer@5 gleich (22/22), Abstand zu themenfremden Fragen 0,12 statt 0,09.
+     */
+    public static final int FUSION_CANDIDATES = 20;
     /** Obergrenzen, wenn die Treffer um Geschwister-Abschnitte ergänzt werden. */
     public static final int MAX_CONTEXT_CHUNKS = 10;
     public static final int MAX_CONTEXT_CHARS = 12_000;

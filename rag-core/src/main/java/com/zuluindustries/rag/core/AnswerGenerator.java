@@ -15,10 +15,11 @@ import com.zuluindustries.rag.core.chunk.ChunkAssembler;
  * <li>Die Frage in die Sprache des Dokuments übersetzen ({@link QueryRewriter},
  * z. B. ein Absatz im Stil des Regelbuchs). Erkennt der Übersetzer, dass die Frage
  * nichts mit dem Dokument zu tun hat, ist hier Schluss.</li>
- * <li>Mit dem Suchtext suchen und die Schwelle prüfen. Ist schon der beste Treffer
- * nicht ähnlich genug (unter {@link Settings#minScore()}), passt nichts im Dokument
- * zur Frage – ein Sicherheitsnetz, falls der Übersetzer eine themenfremde Frage
- * nicht erkennt.</li>
+ * <li>Suchen ({@link Searcher}: mit dem Suchtext, oder z. B. mit Frage und Suchtext
+ * zusammengeführt) und die Schwelle prüfen. Ist schon der beste Treffer nicht
+ * ähnlich genug (unter {@link Settings#minScore()}), passt nichts im Dokument zur
+ * Frage – ein Sicherheitsnetz, falls der Übersetzer eine themenfremde Frage nicht
+ * erkennt.</li>
  * <li>Treffer ergänzen ({@link ContextExpander}, z. B. Geschwister-Abschnitte).</li>
  * <li>Nummerierte Quellen + <b>Original</b>frage → {@link ChatModel} → Antwort.</li>
  * <li>Die Antwort prüfen ({@link AnswerCheck}, z. B. ob jede Regelnummer in einer
@@ -109,14 +110,19 @@ public class AnswerGenerator {
         }
     }
 
-    private final Retriever retriever;
+    private final Searcher searcher;
     private final ChatModel chatModel;
     private final Settings settings;
 
-    public AnswerGenerator(Retriever retriever, ChatModel chatModel, Settings settings) {
-        this.retriever = retriever;
+    public AnswerGenerator(Searcher searcher, ChatModel chatModel, Settings settings) {
+        this.searcher = searcher;
         this.chatModel = chatModel;
         this.settings = settings;
+    }
+
+    /** Mit der einfachen Suche über den Suchtext ({@link Searcher#of}). */
+    public AnswerGenerator(Retriever retriever, ChatModel chatModel, Settings settings) {
+        this(Searcher.of(retriever), chatModel, settings);
     }
 
     /** Kurzform ohne Ergänzung der Treffer und ohne Schwelle. */
@@ -138,9 +144,10 @@ public class AnswerGenerator {
         }
         String searchText = rewritten.get();
 
-        // 2. Suchen und die Schwelle prüfen
-        List<SearchResult> hits = retriever.search(searchText, settings.topK());
-        if (hits.isEmpty() || hits.getFirst().score() < settings.minScore()) {
+        // 2. Suchen und die Schwelle prüfen – mit dem höchsten Wert, denn bei zusammengeführten
+        //    Suchen muss der erste Treffer nicht der ähnlichste sein
+        List<SearchResult> hits = searcher.search(question, searchText, settings.topK());
+        if (hits.isEmpty() || bestScore(hits) < settings.minScore()) {
             return Answer.withoutModel(settings.noAnswerText(), hits, searchText);
         }
 
@@ -163,6 +170,12 @@ public class AnswerGenerator {
         String corrected = chatModel.chat(conversation);
         return new Answer(corrected, sources, true, searchText, settings.check().problems(corrected, sources),
                 problems);
+    }
+
+    /** Höchste Ähnlichkeit unter den Treffern (ergänzte Quellen ohne Wert zählen nicht). */
+    public static double bestScore(List<SearchResult> hits) {
+        return hits.stream().mapToDouble(SearchResult::score).filter(score -> !Double.isNaN(score)).max()
+                .orElse(Double.NEGATIVE_INFINITY);
     }
 
     /**

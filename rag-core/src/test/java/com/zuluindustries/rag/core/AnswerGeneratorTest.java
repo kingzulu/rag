@@ -231,6 +231,21 @@ class AnswerGeneratorTest {
     }
 
     @Test
+    void checksThresholdWithBestScoreNotFirstHit() {
+        Document low = new Document("niedrig", "Niedrig");
+        Document high = new Document("hoch", "Hoch");
+        Searcher fusedOrder = (question, searchText, topK) ->
+                List.of(new SearchResult(low, 0.2), new SearchResult(high, 0.8));   // Reihenfolge nicht nach Wert
+        RecordingChatModel chat = new RecordingChatModel();
+        AnswerGenerator generator = new AnswerGenerator(fusedOrder, chat,
+                AnswerGenerator.Settings.of("System", 2).withMinScore(0.5, "Keine Antwort."));
+
+        AnswerGenerator.Answer answer = generator.answer("Frage?");
+
+        assertTrue(answer.modelAsked(), "0,8 liegt über der Schwelle, auch wenn der erste Treffer darunter liegt");
+    }
+
+    @Test
     void chainsExpandersWithAndThen() {
         Document first = new Document("eins", "Eins");
         Document second = new Document("zwei", "Zwei");
