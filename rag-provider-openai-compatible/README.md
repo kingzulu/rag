@@ -14,6 +14,8 @@ Scaleway, OpenAI oder Mistral; es ändern sich nur Adresse, Modellname und API-K
   verschickt Texte in Paketen zu 32 und ordnet die Vektoren über ihren Index zu.
 - **`OpenAiCompatibleChatModel`** – setzt `ChatModel` um (`POST /chat/completions`) mit
   einstellbarer Temperatur und Höchstlänge; abgeschnittene Antworten bekommen einen Hinweis.
+  Für neuere OpenAI-Modelle lässt sich der Name des Längen-Parameters umstellen
+  (`max_completion_tokens` statt `max_tokens`) und die Temperatur weglassen.
 
 Der API-Key kommt aus einer Umgebungsvariable (`fromEnvironment(...)`), nie aus dem Code.
 
